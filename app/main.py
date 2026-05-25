@@ -15,6 +15,7 @@ from loguru import logger
 from app.api import chat, health, file, aiops, agent, evaluation
 from app.core.milvus_client import milvus_manager
 from app.services.memory_service import memory_service
+from app.core.security import APIKeyMiddleware
 
 
 @asynccontextmanager
@@ -60,13 +61,17 @@ app = FastAPI(
 )
 
 # 配置 CORS
+allowed_origins = [o.strip() for o in config.allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 配置 API Key 鉴权
+app.add_middleware(APIKeyMiddleware)
 
 # 注册路由
 app.include_router(health.router, tags=["健康检查"])

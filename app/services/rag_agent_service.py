@@ -20,7 +20,9 @@ from typing_extensions import TypedDict
 from langchain_qwq import ChatQwen
 
 from app.config import config
+from app.core.checkpointer import create_checkpointer
 from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
+from app.models.response import SourceInfo
 from app.agent.mcp_client import (
     get_mcp_client_with_retry,
     load_mcp_tools_safe,
@@ -106,8 +108,8 @@ class RagAgentService:
         # MCP 客户端（延迟初始化，使用全局管理）
         self.mcp_tools: list = []
 
-        # 创建内存检查点（用于会话管理）
-        self.checkpointer = MemorySaver()
+        # 创建检查点（根据配置选择 memory/sqlite/postgres）
+        self.checkpointer = create_checkpointer()
 
         # Agent 初始化（会在异步方法中完成）
         self.agent = None
@@ -360,6 +362,10 @@ class RagAgentService:
                 await memory_service.check_and_summarize(session_id)
 
             logger.info(f"[会话 {session_id}] RAG Agent 查询完成（流式）")
+
+            # 附加来源
+            sources = await self._search_sources(question)
+            yield {"type": "sources", "data": sources}
             yield {"type": "complete"}
 
         except Exception as e:
@@ -368,6 +374,39 @@ class RagAgentService:
                 f"[会话 {session_id}] RAG Agent 查询失败（流式）: {detail}"
             )
             yield {"type": "error", "data": detail}
+
+    async def _search_sources(self, question: str) -> list:
+        """检索知识库来源（供返回引用使用）"""
+        try:
+            from app.services.hybrid_search_service import hybrid_search_service
+            results = await hybrid_search_service.search(question, top_k=5)
+            sources = []
+            for r in results:
+                meta = r.metadata or {}
+                content_preview = (r.content or "")[:300] if r.content else ""
+                sources.append(SourceInfo(
+                    file_name=meta.get("file_name", meta.get("source", "")),
+                    section=meta.get("section", meta.get("chunk_index", "")),
+                    page=meta.get("page", 1),
+                    chunk_id=r.id,
+                    score=r.score,
+                    content_preview=content_preview,
+                    l2_distance=r.l2_distance,
+                ).model_dump())
+            return sources
+        except Exception as e:
+            logger.warning(f"检索来源失败（不影响回答）: {e}")
+            return []
+
+    async def query_with_sources(
+        self,
+        question: str,
+        session_id: str,
+    ) -> dict:
+        """非流式查询，同时返回回答和来源"""
+        answer = await self.query(question, session_id)
+        sources = await self._search_sources(question)
+        return {"answer": answer, "sources": sources}
 
     async def get_session_history(self, session_id: str) -> list:
         """

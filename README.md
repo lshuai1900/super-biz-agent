@@ -1,6 +1,6 @@
 # 智能 OnCall Agent 系统
 
-> 通过 AI Agent 解决团队真实痛点，整合知识库、对话、运维三大核心能力，实现问题自动应答和故障智能排查的一体化服务。
+> 基于 FastAPI、LangGraph、Milvus、PostgreSQL 和 MCP 的智能运维问答与故障诊断原型系统，支持知识库问答、多 Agent 路由、AIOps 诊断和 Ragas 评估。
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
@@ -9,11 +9,12 @@
 
 ## 核心能力
 
-1. **双模态多智能体架构** - 对话侧 ReAct 动态检索，运维侧 Plan-Execute-Replan 有向图，基于 LangGraph 构建混合路由状态机
-2. **长程记忆与上下文管理** - PostgreSQL 存精准历史，Milvus 存语义摘要；超阈值自动摘要压缩 + 滑动窗口截断
-3. **多路径混合 RAG** - Markdown 按层级 + 滑窗分块，Milvus L2 召回，双阈值过滤 + 重排
-4. **MCP 端到端闭环** - 接入 MCP 标准，集成 CLS 日志检索和监控指标查询工具，SSE 流式输出
-5. **LLM-as-a-Judge 自动评估** - Ragas 评估，Context Precision / Recall / Faithfulness
+1. **双模态多智能体架构** - 对话侧 ReAct 工具调用，运维侧 Plan-Execute-Replan，基于 LangGraph 构建混合路由状态机
+2. **RAG 知识库问答** - Milvus 向量检索，可选 BM25 混合检索 + RRF 融合，支持重排和引用来源返回
+3. **会话记忆管理** - PostgreSQL 存储对话历史（可选），支持 LLM 自动摘要压缩和滑动窗口截断
+4. **MCP 工具集成** - 接入 MCP 标准协议，集成 CLS 日志检索和监控指标查询，支持真实 API 和 mock 降级
+5. **AIOps 故障诊断** - Plan-Execute-Replan 流程，自动生成诊断计划和执行步骤
+6. **Ragas 质量评估** - LLM-as-a-Judge 评估，支持 Context Precision / Recall / Faithfulness 指标
 
 ## 技术栈
 
@@ -193,7 +194,35 @@ python scripts/start_milvus_lite.py
 curl -X POST http://localhost:9900/api/evaluation/run
 ```
 
+## 安全配置
+
+### API Key 鉴权
+
+`.env.example` 中配置 `API_KEY` 即可启用接口鉴权：
+
+- `API_KEY` 为空（默认）：本地开发不启用鉴权
+- `API_KEY` 不为空：请求需携带 `X-API-Key` Header
+- `/health` 等公开路径始终免鉴权
+
+```bash
+# 启用鉴权后调用示例
+curl -H "X-API-Key: your-key" http://localhost:9900/api/chat
+```
+
+### CORS
+
+通过 `ALLOWED_ORIGINS` 配置允许的跨域来源（逗号分隔），不默认启用 `*` 通配符。
+
+### 文件上传安全
+
+- 扩展名白名单过滤（`.txt,.md,.pdf,.docx,.csv,.html`）
+- 文件大小限制（`MAX_UPLOAD_SIZE_MB`，默认 20MB）
+- 路径穿越防护
+- 可执行文件黑名单
+
 ## RAG 配置说明
+
+### 基本检索配置
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
@@ -203,7 +232,39 @@ curl -X POST http://localhost:9900/api/evaluation/run
 | RAG_FINAL_TOP_K | 3 | 最终返回数 |
 | RAG_MIN_SIMILARITY_SCORE | 0.0 | 最低相似度阈值 |
 | RAG_MAX_L2_DISTANCE | 2.0 | 最大 L2 距离阈值 |
-| RAG_ENABLE_RERANK | false | 是否启用重排 |
+| RAG_ENABLE_RERANK | false | 是否启用 DashScope Rerank |
+
+### Hybrid Search 混合检索（可选）
+
+启用后同时使用 Milvus 向量召回和 BM25 关键词召回，通过 RRF 融合结果：
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| ENABLE_HYBRID_SEARCH | false | 是否启用混合检索 |
+| HYBRID_VECTOR_WEIGHT | 0.7 | 向量检索权重 |
+| HYBRID_BM25_WEIGHT | 0.3 | BM25 关键词权重 |
+| HYBRID_RRF_K | 60 | RRF 融合参数 k |
+
+## Agent Checkpointer 配置
+
+LangGraph Agent 状态持久化支持三种模式，通过 `AGENT_CHECKPOINTER` 切换：
+
+| 值 | 说明 |
+|----|------|
+| `memory`（默认） | 内存存储，重启丢失，适合本地开发 |
+| `sqlite` | SQLite 文件持久化，需安装 `langgraph-checkpoint-sqlite` |
+| `postgres` | PostgreSQL 持久化，需安装 `langgraph-checkpoint-postgres` |
+
+## PostgreSQL 记忆服务
+
+PostgreSQL 用于存储会话历史和摘要。如果 PostgreSQL 不可用，系统自动降级为无持久化模式，不影响核心问答功能。
+
+```bash
+# 启动 PostgreSQL
+docker compose -f vector-database.yml up -d postgres
+
+# 不启动 PostgreSQL 时系统自动降级，无需额外配置
+```
 
 ## 项目结构
 
@@ -221,10 +282,11 @@ curl -X POST http://localhost:9900/api/evaluation/run
 │   │   ├── aiops_service.py         # AIOps 服务
 │   │   ├── router_agent_service.py  # 统一路由 Agent
 │   │   ├── memory_service.py        # PostgreSQL 记忆服务
-│   │   ├── vector_store_manager.py  # 向量存储管理
-│   │   ├── vector_index_service.py  # 向量索引服务
 │   │   ├── vector_search_service.py # 向量检索服务
+│   │   ├── hybrid_search_service.py # 混合检索服务（BM25 + 向量 + RRF）
+│   │   ├── bm25_search_service.py   # BM25 关键词检索
 │   │   ├── rerank_service.py        # 重排服务
+│   │   ├── vector_index_service.py  # 向量索引服务
 │   │   └── document_splitter_service.py # 文档分割
 │   ├── evaluation/        # RAG 评估模块
 │   │   ├── dataset_generator.py     # QA 测试集生成
@@ -234,6 +296,10 @@ curl -X POST http://localhost:9900/api/evaluation/run
 │   │   ├── mcp_client.py  # MCP 客户端
 │   │   └── aiops/         # AIOps 核心逻辑
 │   ├── core/              # 核心组件
+│   │   ├── security.py    # API Key 鉴权中间件
+│   │   ├── checkpointer.py # 可配置 Checkpointer
+│   │   ├── milvus_client.py # Milvus 客户端
+│   │   └── llm_factory.py  # LLM 工厂
 │   ├── tools/             # Agent 工具集
 │   ├── models/            # 数据模型
 │   └── utils/             # 工具类
@@ -285,7 +351,9 @@ docker compose -f vector-database.yml restart standalone
 ### PostgreSQL 连接失败
 ```bash
 docker ps | grep postgres
-# 检查配置：默认用户 oncall，密码 oncall123，数据库 oncall
+# PostgreSQL 不可用时系统自动降级，问答功能不受影响
+# 检查配置：默认用户 postgres，密码 postgres，数据库 super_biz_agent
+# 详见 .env.example 中的 POSTGRES_* 配置项
 ```
 
 ### 端口被占用

@@ -70,6 +70,27 @@ class Settings(BaseSettings):
     # Ragas 评估
     ragas_enable: bool = False
 
+    # CORS
+    allowed_origins: str = "http://localhost:9900,http://127.0.0.1:9900,http://localhost:3000,http://127.0.0.1:3000"
+
+    # API Key 鉴权（为空时不启用）
+    api_key: str = ""
+
+    # 上传安全
+    upload_dir: str = "uploads"
+    max_upload_size_mb: int = 20
+    allowed_upload_extensions: str = ".txt,.md,.pdf,.docx,.csv,.html"
+
+    # Agent checkpointer
+    agent_checkpointer: str = "memory"  # memory | sqlite
+    agent_sqlite_db_path: str = "data/agent_state.sqlite3"
+
+    # Hybrid Search
+    enable_hybrid_search: bool = False
+    hybrid_vector_weight: float = 0.7
+    hybrid_bm25_weight: float = 0.3
+    hybrid_rrf_k: int = 60
+
     # Prometheus
     prometheus_base_url: str = "http://127.0.0.1:9090"
     prometheus_request_timeout: float = 10.0

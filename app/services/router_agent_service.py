@@ -18,6 +18,7 @@ from loguru import logger
 from typing_extensions import TypedDict
 
 from app.config import config
+from app.core.checkpointer import create_checkpointer
 from app.services.memory_service import memory_service
 from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
 
@@ -183,7 +184,7 @@ class RouterAgentService:
     """统一路由 Agent 服务"""
 
     def __init__(self):
-        self.checkpointer = MemorySaver()
+        self.checkpointer = create_checkpointer()
         self.graph = self._build_graph()
         logger.info("RouterAgentService 初始化完成")
 

@@ -36,19 +36,20 @@ async def chat(request: ChatRequest):
     """
     try:
         logger.info(f"[会话 {request.id}] 收到快速对话请求: {request.question}")
-        answer = await rag_agent_service.query(
+        result = await rag_agent_service.query_with_sources(
             request.question,
             session_id=request.id
         )
 
-        logger.info(f"[会话 {request.id}] 快速对话完成")
+        logger.info(f"[会话 {request.id}] 快速对话完成, sources={len(result.get('sources', []))}")
 
         return {
             "code": 200,
             "message": "success",
             "data": {
                 "success": True,
-                "answer": answer,
+                "answer": result["answer"],
+                "sources": result["sources"],
                 "errorMessage": None
             }
         }
@@ -61,6 +62,7 @@ async def chat(request: ChatRequest):
             "data": {
                 "success": False,
                 "answer": None,
+                "sources": [],
                 "errorMessage": str(e)
             }
         }
@@ -133,6 +135,15 @@ async def chat_stream(request: ChatRequest):
                         "event": "message",
                         "data": json.dumps({
                             "type": "content",
+                            "data": chunk_data
+                        }, ensure_ascii=False)
+                    }
+                elif chunk_type == "sources":
+                    # 发送知识库来源
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({
+                            "type": "sources",
                             "data": chunk_data
                         }, ensure_ascii=False)
                     }
