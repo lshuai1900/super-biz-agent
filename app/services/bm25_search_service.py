@@ -6,7 +6,7 @@
 
 import math
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 from pymilvus import Collection
@@ -18,9 +18,9 @@ class BM25SearchService:
     """BM25 关键词检索"""
 
     def __init__(self):
-        self._index: Optional["BM25"] = None
-        self._chunks: Dict[str, Dict[str, Any]] = {}  # chunk_id -> metadata
-        self._chunk_ids: List[str] = []
+        self._index: BM25 | None = None
+        self._chunks: dict[str, dict[str, Any]] = {}  # chunk_id -> metadata
+        self._chunk_ids: list[str] = []
         self._ready = False
 
     def build_index(self) -> bool:
@@ -57,7 +57,7 @@ class BM25SearchService:
             self._ready = False
             return False
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 10) -> list[dict[str, Any]]:
         """BM25 关键词检索
 
         Returns:
@@ -88,7 +88,7 @@ class BM25SearchService:
             logger.warning(f"BM25 检索失败（降级）: {e}")
             return []
 
-    def _fetch_all_chunks(self, collection: Collection) -> List[tuple]:
+    def _fetch_all_chunks(self, collection: Collection) -> list[tuple]:
         """从 Milvus 获取所有 chunk"""
         all_data = []
         # 先获取总数
@@ -118,7 +118,7 @@ class BM25SearchService:
 class BM25:
     """BM25 算法实现 (Okapi BM25)"""
 
-    def __init__(self, corpus: List[str], k1: float = 1.5, b: float = 0.75):
+    def __init__(self, corpus: list[str], k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
         self.b = b
         self.corpus = corpus
@@ -151,7 +151,7 @@ class BM25:
             for t, cnt in term_counts.items():
                 self.inverted_index[t].append((idx, cnt))
 
-    def _tokenize(self, text: str) -> List[str]:
+    def _tokenize(self, text: str) -> list[str]:
         """简单分词（按非字母数字字符分割）"""
         if not text:
             return []
@@ -168,7 +168,7 @@ class BM25:
             tokens.append(current)
         return tokens
 
-    def score(self, query: str) -> Dict[int, float]:
+    def score(self, query: str) -> dict[int, float]:
         """计算 query 与每个文档的 BM25 分数"""
         query_tokens = self._tokenize(query)
         scores = defaultdict(float)

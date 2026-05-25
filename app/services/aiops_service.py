@@ -6,10 +6,10 @@
 import asyncio
 from typing import AsyncGenerator, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 
 from app.agent.aiops import PlanExecuteState, planner, executor, replanner
+from app.core.checkpointer import create_checkpointer
 from app.services.memory_service import memory_service
 
 
@@ -24,7 +24,7 @@ class AIOpsService:
 
     def __init__(self):
         """初始化服务"""
-        self.checkpointer = MemorySaver()
+        self.checkpointer = create_checkpointer()
         self.graph = self._build_graph()
         logger.info("Plan-Execute-Replan Service 初始化完成")
 

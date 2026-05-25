@@ -9,22 +9,22 @@
 - HYBRID_RRF_K: RRF 参数 k
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
 from app.config import config
-from app.services.vector_search_service import SearchResult, vector_search_service
 from app.services.bm25_search_service import bm25_service
+from app.services.vector_search_service import SearchResult, vector_search_service
 
 
 def _rrf_fusion(
-    vector_results: List[SearchResult],
-    bm25_results: List[Dict[str, Any]],
+    vector_results: list[SearchResult],
+    bm25_results: list[dict[str, Any]],
     k: int = 60,
     vector_weight: float = 0.7,
     bm25_weight: float = 0.3,
-) -> List[SearchResult]:
+) -> list[SearchResult]:
     """RRF + 加权融合
 
     Args:
@@ -37,9 +37,9 @@ def _rrf_fusion(
     Returns:
         融合后的 SearchResult 列表
     """
-    scores: Dict[str, float] = {}
-    results_map: Dict[str, SearchResult] = {}
-    content_map: Dict[str, str] = {}
+    scores: dict[str, float] = {}
+    results_map: dict[str, SearchResult] = {}
+    content_map: dict[str, str] = {}
 
     # 向量检索 RRF 分数
     for rank, r in enumerate(vector_results):
@@ -91,8 +91,8 @@ class HybridSearchService:
     async def search(
         self,
         query: str,
-        top_k: Optional[int] = None,
-    ) -> List[SearchResult]:
+        top_k: int | None = None,
+    ) -> list[SearchResult]:
         """混合检索
 
         Args:

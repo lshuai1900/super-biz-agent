@@ -8,7 +8,6 @@
 - AGENT_SQLITE_DB_PATH=data/agent_state.sqlite3
 """
 
-import os
 from pathlib import Path
 
 from loguru import logger

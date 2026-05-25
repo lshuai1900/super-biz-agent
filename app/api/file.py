@@ -6,10 +6,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from app.config import config
 from app.services.vector_index_service import vector_index_service
-from loguru import logger
 
 router = APIRouter()
 
@@ -136,7 +136,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error(f"文件上传失败: {e}")
-        raise HTTPException(status_code=500, detail=f"文件上传失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {e}") from e
 
 
 @router.post("/index_directory")
@@ -156,4 +156,4 @@ async def index_directory(directory_path: str = None):
         )
     except Exception as e:
         logger.error(f"索引目录失败: {e}")
-        raise HTTPException(status_code=500, detail=f"索引目录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"索引目录失败: {e}") from e

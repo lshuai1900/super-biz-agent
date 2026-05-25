@@ -4,7 +4,8 @@
 支持真正的流式输出和更好的模型适配。
 """
 
-from typing import Annotated, Any, AsyncGenerator, Dict, Sequence
+from collections.abc import AsyncGenerator, Sequence
+from typing import Annotated, Any
 
 from langchain.agents import create_agent
 from langchain_core.messages import (
@@ -13,23 +14,22 @@ from langchain_core.messages import (
     RemoveMessage,
     SystemMessage,
 )
-from langgraph.checkpoint.memory import MemorySaver
+from langchain_qwq import ChatQwen
 from langgraph.graph.message import REMOVE_ALL_MESSAGES, add_messages
 from loguru import logger
 from typing_extensions import TypedDict
-from langchain_qwq import ChatQwen
 
-from app.config import config
-from app.core.checkpointer import create_checkpointer
-from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
-from app.models.response import SourceInfo
 from app.agent.mcp_client import (
+    format_exception_chain,
     get_mcp_client_with_retry,
     load_mcp_tools_safe,
-    format_exception_chain,
     suggest_mcp_transport,
 )
+from app.config import config
+from app.core.checkpointer import create_checkpointer
+from app.models.response import SourceInfo
 from app.services.memory_service import memory_service
+from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
 
 # 阿里千问大模型和langchain集成参考： https://docs.langchain.com/oss/python/integrations/chat/qwen
 # 注意：需要配置环境变量 DASHSCOPE_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1 否则默认访问的是新加坡站点
@@ -280,7 +280,7 @@ class RagAgentService:
         self,
         question: str,
         session_id: str,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """
         流式处理用户问题（逐步返回答案片段）
 

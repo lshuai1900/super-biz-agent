@@ -7,20 +7,17 @@
 - final 节点：统一整理响应
 """
 
-import json
-from typing import Annotated, Any, AsyncGenerator, Dict, List, Optional, Sequence, Tuple
+from collections.abc import AsyncGenerator, Sequence
+from typing import Annotated, Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from loguru import logger
 from typing_extensions import TypedDict
 
-from app.config import config
 from app.core.checkpointer import create_checkpointer
 from app.services.memory_service import memory_service
-from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
 
 
 class RouterState(TypedDict):
@@ -33,7 +30,7 @@ class RouterState(TypedDict):
     route_reason: str
     rag_answer: str
     aiops_answer: str
-    aiops_events: List[Dict[str, Any]]
+    aiops_events: list[dict[str, Any]]
     final_answer: str
     error: str
 
@@ -49,7 +46,7 @@ def _build_classify_prompt() -> str:
 """
 
 
-async def route_node(state: RouterState) -> Dict[str, Any]:
+async def route_node(state: RouterState) -> dict[str, Any]:
     """路由节点：判断请求类型"""
     question = state.get("question", "")
     mode = state.get("mode", "auto")
@@ -82,7 +79,7 @@ async def route_node(state: RouterState) -> Dict[str, Any]:
         return {"route": "rag_qa", "route_reason": f"分类异常，默认: {e}"}
 
 
-async def rag_agent_node(state: RouterState) -> Dict[str, Any]:
+async def rag_agent_node(state: RouterState) -> dict[str, Any]:
     """RAG Agent 节点"""
     from app.services.rag_agent_service import rag_agent_service
 
@@ -99,7 +96,7 @@ async def rag_agent_node(state: RouterState) -> Dict[str, Any]:
         return {"rag_answer": "", "final_answer": f"抱歉，知识库查询遇到问题: {e}"}
 
 
-async def aiops_agent_node(state: RouterState) -> Dict[str, Any]:
+async def aiops_agent_node(state: RouterState) -> dict[str, Any]:
     """AIOps Agent 节点"""
     from app.services.aiops_service import aiops_service
 
@@ -135,7 +132,7 @@ async def aiops_agent_node(state: RouterState) -> Dict[str, Any]:
         }
 
 
-async def general_chat_node(state: RouterState) -> Dict[str, Any]:
+async def general_chat_node(state: RouterState) -> dict[str, Any]:
     """普通对话节点（不调用工具）"""
     from app.core.llm_factory import llm_factory
 
@@ -159,7 +156,7 @@ async def general_chat_node(state: RouterState) -> Dict[str, Any]:
         return {"final_answer": f"抱歉，我遇到了一些问题: {e}"}
 
 
-async def final_node(state: RouterState) -> Dict[str, Any]:
+async def final_node(state: RouterState) -> dict[str, Any]:
     """最终节点：确保有 final_answer"""
     answer = state.get("final_answer", "")
     if not answer:
@@ -222,7 +219,7 @@ class RouterAgentService:
         question: str,
         session_id: str = "default",
         mode: str = "auto",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """非流式处理"""
         try:
             # 创建会话
@@ -272,7 +269,7 @@ class RouterAgentService:
         question: str,
         session_id: str = "default",
         mode: str = "auto",
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """流式处理"""
         try:
             await memory_service.create_or_get_conversation(session_id, mode)

@@ -3,19 +3,20 @@
 主应用程序，配置路由、中间件、静态文件等
 """
 
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
-import os
-
-from app.config import config
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
-from app.api import chat, health, file, aiops, agent, evaluation
+
+from app.api import agent, aiops, chat, evaluation, file, health
+from app.config import config
 from app.core.milvus_client import milvus_manager
-from app.services.memory_service import memory_service
 from app.core.security import APIKeyMiddleware
+from app.services.memory_service import memory_service
 
 
 @asynccontextmanager
@@ -27,7 +28,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"📝 环境: {'开发' if config.debug else '生产'}")
     logger.info(f"🌐 监听地址: http://{config.host}:{config.port}")
     logger.info(f"📚 API 文档: http://{config.host}:{config.port}/docs")
-    
+
     # 连接 Milvus
     logger.info("🔌 正在连接 Milvus...")
     milvus_manager.connect()
@@ -35,7 +36,6 @@ async def lifespan(app: FastAPI):
 
     # 初始化 PostgreSQL 记忆服务
     logger.info("🗄️ 正在初始化 PostgreSQL 记忆服务...")
-    import asyncio
     try:
         await memory_service.initialize()
         logger.info("✅ PostgreSQL 记忆服务初始化完成")
@@ -43,9 +43,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️ PostgreSQL 记忆服务初始化失败 (不影响启动): {e}")
 
     logger.info("=" * 60)
-    
+
     yield
-    
+
     # 关闭时执行
     logger.info("🔌 正在关闭 Milvus 连接...")
     milvus_manager.close()
@@ -100,7 +100,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=config.host,
