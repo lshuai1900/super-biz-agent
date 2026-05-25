@@ -33,6 +33,7 @@ log/
 # Runtime output
 reports/
 uploads/
+data/
 tmp/
 temp/
 runtime/

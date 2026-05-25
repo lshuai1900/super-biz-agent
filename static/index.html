@@ -232,6 +232,21 @@
                         <span class="header-badge">Ragas</span>
                     </div>
                     <div class="eval-content">
+                        <div class="eval-settings">
+                            <label class="eval-checkbox">
+                                <input type="checkbox" id="evalQuickMode" checked />
+                                <span>快速模式 (3 条, 60s 超时)</span>
+                            </label>
+                            <div class="eval-param">
+                                <label>数量:</label>
+                                <select id="evalCount">
+                                    <option value="3" selected>3 条</option>
+                                    <option value="5">5 条</option>
+                                    <option value="10">10 条</option>
+                                    <option value="20">20 条</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="eval-actions">
                             <button class="btn btn-primary" id="evalGenerateBtn">
                                 <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -246,6 +261,7 @@
                                 刷新结果
                             </button>
                         </div>
+                        <div class="eval-status" id="evalStatus" style="display:none"></div>
                         <div class="eval-metrics" id="evalMetrics">
                             <div class="eval-placeholder">
                                 <svg viewBox="0 0 24 24" fill="none" width="40" height="40"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>

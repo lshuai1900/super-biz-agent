@@ -41,6 +41,9 @@ function getDom() {
         evalGenerateBtn: $('#evalGenerateBtn'),
         evalRunBtn: $('#evalRunBtn'),
         evalRefreshBtn: $('#evalRefreshBtn'),
+        evalQuickMode: $('#evalQuickMode'),
+        evalCount: $('#evalCount'),
+        evalStatus: $('#evalStatus'),
         evalMetrics: $('#evalMetrics'),
         evalDetails: $('#evalDetails'),
         chatCharCount: $('#chatCharCount'),
@@ -722,34 +725,87 @@ function init() {
 
     // Eval buttons
     DOM.evalGenerateBtn.addEventListener('click', async function () {
-        showLoading('生成测试集中...');
+        var btn = DOM.evalGenerateBtn;
+        var quick = DOM.evalQuickMode.checked;
+        var count = parseInt(DOM.evalCount.value) || 3;
+
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+        var statusEl = DOM.evalStatus;
+        statusEl.style.display = 'block';
+        statusEl.className = 'eval-status eval-status-running';
+        statusEl.textContent = '正在生成测试集: count=' + count + ', quick=' + quick + '...';
+
+        // 60秒超时提示
+        var slowTimer = setTimeout(function () {
+            statusEl.className = 'eval-status eval-status-warning';
+            statusEl.textContent = '生成较慢，建议减少测试数量或使用快速模式。继续等待中...';
+        }, 60000);
+
         try {
-            var resp = await apiPost('/api/evaluation/generate_dataset', { source_dir: 'aiops-docs', count: 10 });
-            if (resp.code === 200) {
-                showNotification('生成成功: ' + ((resp.data && resp.data.total) || 0) + ' 条', 'success');
+            var body = {
+                source_dir: 'aiops-docs',
+                count: count,
+                quick: quick,
+            };
+            var resp = await apiPost('/api/evaluation/generate_dataset', body);
+
+            clearTimeout(slowTimer);
+
+            if (resp.code === 200 || resp.code === 206) {
+                var total = (resp.data && resp.data.total) || 0;
+                var fromCache = resp.data && resp.data.from_cache;
+                var partial = resp.data && resp.data.partial;
+                var msg = '生成' + (partial ? ' (部分)' : '') + (fromCache ? ' (来自缓存)' : '') + ': ' + total + ' 条';
+                statusEl.className = 'eval-status eval-status-success';
+                statusEl.textContent = (resp.message || msg);
+                showNotification(msg, partial ? 'warn' : 'success');
             } else {
-                showNotification('生成失败: ' + (resp.message || ''), 'error');
+                statusEl.className = 'eval-status eval-status-error';
+                statusEl.textContent = resp.message || '生成失败';
+                showNotification('生成失败: ' + (resp.message || '未知错误'), 'error');
             }
         } catch (err) {
+            clearTimeout(slowTimer);
+            statusEl.className = 'eval-status eval-status-error';
+            statusEl.textContent = '请求失败: ' + err.message;
             showNotification('错误: ' + err.message, 'error');
         }
-        hideLoading();
+
+        btn.disabled = false;
+        btn.textContent = '生成测试集';
         loadEvalResults();
     });
 
     DOM.evalRunBtn.addEventListener('click', async function () {
-        showLoading('运行评估中...');
+        var btn = DOM.evalRunBtn;
+        btn.disabled = true;
+        btn.textContent = '运行中...';
+
+        var statusEl = DOM.evalStatus;
+        statusEl.style.display = 'block';
+        statusEl.className = 'eval-status eval-status-running';
+        statusEl.textContent = '正在运行评估...';
+
         try {
             var resp = await apiPost('/api/evaluation/run', { use_dataset: true });
             if (resp.code === 200) {
+                statusEl.className = 'eval-status eval-status-success';
+                statusEl.textContent = '评估完成';
                 showNotification('评估完成', 'success');
             } else {
+                statusEl.className = 'eval-status eval-status-error';
+                statusEl.textContent = resp.message || '评估失败';
                 showNotification('评估失败: ' + (resp.message || ''), 'error');
             }
         } catch (err) {
+            statusEl.className = 'eval-status eval-status-error';
+            statusEl.textContent = '请求失败: ' + err.message;
             showNotification('错误: ' + err.message, 'error');
         }
-        hideLoading();
+
+        btn.disabled = false;
+        btn.textContent = '运行评估';
         loadEvalResults();
     });
 

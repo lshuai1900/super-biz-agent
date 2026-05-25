@@ -1,12 +1,11 @@
 """RAG 评估 API 接口"""
 
-import json
 from fastapi import APIRouter
 from loguru import logger
 
-from app.models.evaluation import GenerateDatasetRequest, RunEvalRequest
 from app.evaluation.dataset_generator import dataset_generator
 from app.evaluation.ragas_evaluator import ragas_evaluator
+from app.models.evaluation import GenerateDatasetRequest, RunEvalRequest
 from app.services.memory_service import memory_service
 
 router = APIRouter()
@@ -14,23 +13,53 @@ router = APIRouter()
 
 @router.post("/evaluation/generate_dataset")
 async def generate_dataset(request: GenerateDatasetRequest):
-    """生成 QA 测试集"""
+    """生成 QA 测试集
+
+    参数：
+    - count: 生成数量（默认 3，最大 20）
+    - max_docs: 最多读取文档数（默认 3）
+    - max_chunks: 最多使用 chunk 数（默认 20）
+    - timeout_seconds: 超时时间（默认 120s）
+    - use_cache: 是否使用缓存（默认 true）
+    - force: 强制重新生成（默认 false）
+    - quick: 快速演示模式（默认 false，自动限制参数规模）
+    """
     try:
-        dataset = await dataset_generator.generate_dataset(
+        # 快速模式：覆盖计数限制
+        if request.quick:
+            request.count = min(request.count, 3)
+            request.max_docs = min(request.max_docs, 2)
+            request.max_chunks = min(request.max_chunks, 10)
+            request.timeout_seconds = min(request.timeout_seconds, 60)
+
+        result = await dataset_generator.generate_dataset(
             source_dir=request.source_dir,
             count=request.count,
+            max_docs=request.max_docs,
+            max_chunks=request.max_chunks,
+            timeout_seconds=request.timeout_seconds,
+            use_cache=request.use_cache,
+            force=request.force,
+            quick=request.quick,
         )
+
         return {
-            "code": 200,
-            "message": "success",
+            "code": 200 if result.get("success") else (206 if result.get("partial") else 400),
+            "message": result.get("message", "success"),
             "data": {
-                "total": len(dataset),
-                "items": dataset,
+                "total": result.get("total", 0),
+                "items": result.get("items", []),
+                "partial": result.get("partial", False),
+                "from_cache": result.get("from_cache", False),
             },
         }
     except Exception as e:
         logger.error(f"生成数据集失败: {e}")
-        return {"code": 500, "message": str(e), "data": None}
+        return {
+            "code": 500,
+            "message": f"生成失败: {e}",
+            "data": {"total": 0, "items": [], "partial": True},
+        }
 
 
 @router.post("/evaluation/run")
@@ -53,11 +82,15 @@ async def run_evaluation(request: RunEvalRequest):
                     dataset = latest["details"]
 
         if not dataset:
-            # 自动生成数据集
-            dataset = await dataset_generator.generate_dataset(
+            # 自动生成数据集（快速模式）
+            gen_result = await dataset_generator.generate_dataset(
                 source_dir="aiops-docs",
                 count=5,
+                max_docs=3,
+                max_chunks=20,
+                quick=True,
             )
+            dataset = gen_result.get("items", [])
 
         if not dataset:
             return {"code": 400, "message": "没有可用的评估数据集", "data": None}
