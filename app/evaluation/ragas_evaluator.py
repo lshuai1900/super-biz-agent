@@ -75,6 +75,47 @@ class RagasEvaluator:
 
         return result
 
+    def _setup_ragas_llm(self):
+        """配置 Ragas 使用的 LLM 和 embedding"""
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_openai import OpenAIEmbeddings
+            from ragas.llms import LangchainLLM
+            from ragas.embeddings import LangchainEmbeddings
+
+            base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            api_key = config.dashscope_api_key
+
+            if not api_key:
+                logger.warning("DASHSCOPE_API_KEY 未配置，Ragas 使用默认 LLM")
+                return None, None
+
+            # 为 Ragas 设置评判 LLM
+            judge_llm = ChatOpenAI(
+                model="qwen-plus",
+                temperature=0.0,
+                base_url=base_url,
+                api_key=api_key,
+            )
+
+            # 为 Ragas 设置 embedding
+            judge_embeddings = OpenAIEmbeddings(
+                model="text-embedding-v4",
+                base_url=base_url,
+                api_key=api_key,
+            )
+
+            # 保存到实例变量供 evaluate 方法使用
+            self._ragas_llm = LangchainLLM(judge_llm)
+            self._ragas_embeddings = LangchainEmbeddings(judge_embeddings)
+
+            return self._ragas_llm, self._ragas_embeddings
+        except Exception as e:
+            logger.warning(f"Ragas LLM/embedding 配置失败，使用默认: {e}")
+            self._ragas_llm = None
+            self._ragas_embeddings = None
+            return None, None
+
     async def _evaluate_with_ragas(
         self, dataset: List[Dict[str, Any]], run_id: str
     ) -> Dict[str, Any]:
@@ -87,6 +128,10 @@ class RagasEvaluator:
             faithfulness,
         )
         from ragas import evaluate as ragas_evaluate
+        import pandas as pd
+
+        # 配置 Ragas 使用的 LLM 和 embedding
+        self._setup_ragas_llm()
 
         # 准备数据
         data = {
@@ -103,21 +148,39 @@ class RagasEvaluator:
 
         hf_dataset = HFDataset.from_dict(data)
 
+        # 将 LLM/embeddings 注入 metrics
+        if getattr(self, '_ragas_llm', None):
+            context_precision.llm = self._ragas_llm
+            context_recall.llm = self._ragas_llm
+            faithfulness.llm = self._ragas_llm
+            answer_relevancy.llm = self._ragas_llm
+        if getattr(self, '_ragas_embeddings', None):
+            answer_relevancy.embeddings = self._ragas_embeddings
+
         # 运行评估
         result = ragas_evaluate(
             hf_dataset,
             metrics=[context_precision, context_recall, faithfulness, answer_relevancy],
         )
 
-        metrics = {
-            "context_precision": float(result.get("context_precision", 0)),
-            "context_recall": float(result.get("context_recall", 0)),
-            "faithfulness": float(result.get("faithfulness", 0)),
-            "answer_relevancy": float(result.get("answer_relevancy", 0)),
-        }
+        # 转换为 DataFrame 获取 per-item 和 overall metrics
+        result_df = result.to_pandas()
 
+        # 总体指标（取均值）
+        metrics = {}
+        for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+            if col in result_df.columns:
+                metrics[col] = float(result_df[col].mean())
+
+        # Per-item 指标
         details = []
         for i, item in enumerate(dataset):
+            item_metrics = {}
+            for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+                if col in result_df.columns and i < len(result_df):
+                    val = result_df[col].iloc[i]
+                    item_metrics[col] = float(val) if pd.notna(val) else 0.0
+
             details.append({
                 "index": i,
                 "question": item["question"],
@@ -125,15 +188,24 @@ class RagasEvaluator:
                 "ground_truth": item.get("ground_truth", ""),
                 "contexts": item.get("contexts", []),
                 "source": item.get("source", ""),
+                "metrics": item_metrics,
             })
+
+        # 找出低分样例（faithfulness < 0.7 或 context_recall < 0.5）
+        low_score_samples = [
+            d for d in details
+            if d["metrics"].get("faithfulness", 1.0) < 0.7
+            or d["metrics"].get("context_recall", 1.0) < 0.5
+        ]
 
         return {
             "eval_run_id": run_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "metrics": metrics,
             "total_items": len(dataset),
-            "failed_items": 0,
+            "failed_items": len([d for d in details if not d.get("answer")]),
             "details": details,
+            "low_score_samples": low_score_samples[:5],
         }
 
     async def _persist_result(
@@ -153,7 +225,7 @@ class RagasEvaluator:
                 report_path=f"reports/ragas_eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             )
 
-            # 写入 eval_items
+            # 写入 eval_items（含 item-level metrics）
             items = []
             for i, item in enumerate(dataset):
                 detail = result.get("details", [])[i] if i < len(result.get("details", [])) else {}
@@ -162,7 +234,7 @@ class RagasEvaluator:
                     "answer": detail.get("answer", ""),
                     "ground_truth": item.get("ground_truth", ""),
                     "contexts": item.get("contexts", []),
-                    "metrics": {},
+                    "metrics": detail.get("metrics", {}),
                     "source": item.get("source", "aiops-docs"),
                 })
 

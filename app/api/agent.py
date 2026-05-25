@@ -85,7 +85,7 @@ async def unified_agent_stream(request: AgentRequest):
 
 @router.get("/mcp/status")
 async def mcp_status():
-    """MCP 服务状态"""
+    """MCP 服务状态（含 real/mock 标识）"""
     try:
         servers = {}
         tools = []
@@ -103,12 +103,37 @@ async def mcp_status():
             except Exception:
                 pass
 
+        # 判断每个 server 是 real 还是 mock
+        server_status = {}
+        for name, server_cfg in config.mcp_servers.items():
+            if name == "cls":
+                has_creds = bool(config.tencentcloud_secret_id and config.tencentcloud_secret_key)
+                server_status[name] = {
+                    "type": "real" if has_creds else "mock",
+                    "mode": "CLS SDK" if has_creds else "模拟数据",
+                    "endpoint": server_cfg.get("url", ""),
+                }
+            elif name == "monitor":
+                has_prom = bool(config.prometheus_base_url and config.prometheus_base_url != "http://127.0.0.1:9090")
+                server_status[name] = {
+                    "type": "real" if has_prom else "mock",
+                    "mode": "Prometheus HTTP API" if has_prom else "模拟数据",
+                    "endpoint": server_cfg.get("url", ""),
+                }
+            else:
+                server_status[name] = {
+                    "type": "unknown",
+                    "mode": "未知",
+                    "endpoint": server_cfg.get("url", ""),
+                }
+
         return {
             "code": 200,
             "message": "success",
             "data": {
                 "connected": connected,
-                "servers": config.mcp_servers if hasattr(config, "mcp_servers") else {},
+                "servers": config.mcp_servers,
+                "server_status": server_status,
                 "tools": tools,
             },
         }

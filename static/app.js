@@ -531,29 +531,79 @@ async function loadEvalResults() {
         var resp = await apiGet('/api/evaluation/results');
         if (resp.code !== 200 || !resp.data || !resp.data.latest) {
             DOM.evalMetrics.innerHTML = '<div class="eval-placeholder"><svg viewBox="0 0 24 24" fill="none" width="40" height="40"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg><p>暂无评估结果</p></div>';
+            DOM.evalDetails.innerHTML = '';
             return;
         }
         var latest = resp.data.latest;
         var metrics = latest.metrics || {};
-        var html = '<div class="metrics-grid">';
-        var labels = { context_precision: '上下文精确率', context_recall: '上下文召回率', faithfulness: '忠实度', answer_relevancy: '回答相关性' };
-        for (var key in labels) {
+
+        // 计算总分（各项均值）
+        var scoreValues = [];
+        var scoreLabels = { context_precision: '上下文精确率', context_recall: '上下文召回率', faithfulness: '忠实度', answer_relevancy: '回答相关性' };
+        for (var key in scoreLabels) {
+            if (metrics[key] !== undefined && metrics[key] !== null) scoreValues.push(metrics[key]);
+        }
+        var totalScore = scoreValues.length > 0 ? (scoreValues.reduce(function (a, b) { return a + b; }, 0) / scoreValues.length) : 0;
+
+        var html = '<div class="total-score-card"><div class="total-score-value">' + (totalScore * 100).toFixed(1) + '%</div><div class="total-score-label">综合评分</div></div>';
+        html += '<div class="metrics-grid">';
+        for (var key in scoreLabels) {
             var val = metrics[key];
             if (val !== undefined && val !== null) {
-                html += '<div class="metric-card"><div class="metric-value">' + (val * 100).toFixed(1) + '%</div><div class="metric-label">' + labels[key] + '</div></div>';
+                var colorClass = val >= 0.8 ? 'score-high' : (val >= 0.5 ? 'score-mid' : 'score-low');
+                html += '<div class="metric-card ' + colorClass + '"><div class="metric-value">' + (val * 100).toFixed(1) + '%</div><div class="metric-label">' + scoreLabels[key] + '</div></div>';
             }
         }
         html += '</div>';
         html += '<div style="margin-top:10px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono)">运行ID: ' + (latest.eval_run_id || '') + ' · 条目: ' + (latest.total_items || 0) + '</div>';
         DOM.evalMetrics.innerHTML = html;
 
-        var details = latest.details || [];
+        // 低分样例
+        var lowScores = latest.low_score_samples || latest.details ? (latest.details.filter(function (d) {
+            var fm = d.metrics ? (d.metrics.faithfulness || 1) : 1;
+            var cr = d.metrics ? (d.metrics.context_recall || 1) : 1;
+            return fm < 0.7 || cr < 0.5;
+        }) || []) : [];
+        lowScores = lowScores.slice(0, 5);
+
         var dh = '';
-        details.slice(0, 5).forEach(function (item, i) {
-            dh += '<div class="eval-detail-item"><strong>#' + (i + 1) + '</strong> ' + escapeHtml((item.question || '').slice(0, 120)) + '</div>';
-        });
-        if (details.length > 5) {
-            dh += '<div class="eval-detail-item" style="text-align:center;color:var(--text-muted)">… 还有 ' + (details.length - 5) + ' 条</div>';
+        if (lowScores.length > 0) {
+            dh += '<div class="eval-section-title" style="color:var(--accent-red)">⚠ 低分样例（faithfulness<0.7 或 context_recall<0.5）</div>';
+            lowScores.forEach(function (item, i) {
+                var im = item.metrics || {};
+                dh += '<div class="eval-detail-item eval-low-score">';
+                dh += '<div class="eval-detail-header"><strong>#' + (i + 1) + '</strong> ';
+                dh += '<span class="metric-badge" style="color:' + (im.faithfulness >= 0.7 ? 'var(--accent-green)' : 'var(--accent-red)') + '">忠实度:' + (im.faithfulness !== undefined ? (im.faithfulness * 100).toFixed(1) + '%' : 'N/A') + '</span>';
+                dh += '<span class="metric-badge" style="color:' + (im.context_recall >= 0.5 ? 'var(--accent-green)' : 'var(--accent-red)') + '">召回率:' + (im.context_recall !== undefined ? (im.context_recall * 100).toFixed(1) + '%' : 'N/A') + '</span>';
+                dh += '</div>';
+                dh += '<div class="eval-compare"><div class="eval-field"><span class="eval-field-label">问题:</span><span>' + escapeHtml(item.question || '') + '</span></div>';
+                dh += '<div class="eval-field"><span class="eval-field-label">回答:</span><span>' + escapeHtml((item.answer || '').slice(0, 200)) + '</span></div>';
+                dh += '<div class="eval-field"><span class="eval-field-label">标准答案:</span><span>' + escapeHtml((item.ground_truth || '').slice(0, 200)) + '</span></div>';
+                var ctxs = item.contexts || [];
+                if (ctxs.length > 0) {
+                    dh += '<div class="eval-field"><span class="eval-field-label">检索上下文:</span><span>' + escapeHtml(ctxs.join(' | ').slice(0, 300)) + '</span></div>';
+                }
+                dh += '</div></div>';
+            });
+        }
+
+        // 全部详情
+        var details = latest.details || [];
+        if (details.length > 0) {
+            dh += '<div class="eval-section-title">所有评估条目</div>';
+            details.slice(0, 10).forEach(function (item, i) {
+                var im = item.metrics || {};
+                var scores = '';
+                for (var k in { context_precision: 1, context_recall: 1, faithfulness: 1, answer_relevancy: 1 }) {
+                    if (im[k] !== undefined) scores += k.slice(0, 4) + ':' + (im[k] * 100).toFixed(0) + '% ';
+                }
+                dh += '<div class="eval-detail-item"><strong>#' + (i + 1) + '</strong> ' + escapeHtml((item.question || '').slice(0, 100));
+                if (scores) dh += ' <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">' + scores + '</span>';
+                dh += '</div>';
+            });
+            if (details.length > 10) {
+                dh += '<div class="eval-detail-item" style="text-align:center;color:var(--text-muted)">… 还有 ' + (details.length - 10) + ' 条</div>';
+            }
         }
         DOM.evalDetails.innerHTML = dh;
     } catch (err) {

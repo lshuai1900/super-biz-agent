@@ -336,10 +336,9 @@ class RouterAgentService:
         await memory_service.add_assistant_message(session_id, "".join(full))
 
     async def _stream_rag(self, question: str, session_id: str):
-        """流式 RAG"""
+        """流式 RAG（无重复写消息，由下游 rag_agent_service.query_stream 负责写入）"""
         from app.services.rag_agent_service import rag_agent_service
 
-        await memory_service.add_user_message(session_id, question)
         async for chunk in rag_agent_service.query_stream(question, session_id):
             yield chunk
 

@@ -1,0 +1,20 @@
+# 开发环境扩展 - 可选附加组件
+# 使用方式: docker compose -f vector-database.yml -f docker-compose.dev.yml up -d
+services:
+  attu:
+    container_name: milvus-attu
+    image: zilliz/attu:v2.5
+    ports:
+      - "8000:3000"
+    environment:
+      MILVUS_URL: standalone:19530
+    depends_on:
+      - standalone
+    profiles:
+      - dev
+      - full
+
+networks:
+  default:
+    name: milvus
+    external: true

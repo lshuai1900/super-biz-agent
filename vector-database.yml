@@ -74,17 +74,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # 这是新增的 Attu 服务哦！
-  attu:
-    container_name: milvus-attu
-    image: zilliz/attu:v2.5
-    ports:
-      - "8000:3000" # 把本地的 8000 端口映射到容器的 3000 端口 (Attu 默认端口)
-    environment:
-      # MILVUS_URL 指向 Docker 网络里的 Milvus standalone 服务
-      MILVUS_URL: standalone:19530
-    depends_on:
-      - standalone # 确保 Milvus 启动后再启动 Attu
+  # Attu（Milvus Web 管理界面）已移到 docker-compose.dev.yml
+  # 如需启用：docker compose -f vector-database.yml -f docker-compose.dev.yml up -d attu
 networks:
   default:
     name: milvus
