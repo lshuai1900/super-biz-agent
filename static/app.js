@@ -1,6 +1,6 @@
 /**
- * OnCall Agent System - Frontend Application
- * Dark Cyber Ops Theme
+ * OnCall Agent System — Frontend Application
+ * Breeze Theme
  */
 
 // ==================== State ====================
@@ -216,7 +216,7 @@ async function sendMessage() {
             }
         }
     } catch (err) {
-        contentDiv.innerHTML = '<p style="color:var(--accent-red)">请求失败: ' + escapeHtml(err.message) + '</p>';
+        contentDiv.innerHTML = '<p style="color:var(--color-error)">请求失败: ' + escapeHtml(err.message) + '</p>';
     }
 
     var msgEl = contentDiv.closest('.message');
@@ -338,14 +338,14 @@ async function sendRagQuery() {
                             note.textContent = '✓ 回答完成';
                             contentDiv.appendChild(note);
                         } else if (t === 'error') {
-                            contentDiv.innerHTML += '<p style="color:var(--accent-red)">错误: ' + escapeHtml(data.data || '') + '</p>';
+                            contentDiv.innerHTML += '<p style="color:var(--color-error)">错误: ' + escapeHtml(data.data || '') + '</p>';
                         }
                     } catch (e) { /* skip */ }
                 }
             }
         }
     } catch (err) {
-        contentDiv.innerHTML = '<p style="color:var(--accent-red)">请求失败: ' + escapeHtml(err.message) + '</p>';
+        contentDiv.innerHTML = '<p style="color:var(--color-error)">请求失败: ' + escapeHtml(err.message) + '</p>';
     }
 
     ai.wrapper.classList.remove('streaming');
@@ -364,7 +364,7 @@ async function startDiagnose() {
     container.innerHTML = '';
     STATE.isStreaming = true;
     DOM.aiopsStartBtn.disabled = true;
-    DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-cyan);animation:pulseDot 1.5s infinite"></span> 诊断进行中...';
+    DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-primary);animation:pulseDot 1.5s infinite"></span> 诊断进行中...';
 
     var ai = makeAssistantContainer(container);
     ai.wrapper.classList.add('aiops-message');
@@ -394,14 +394,14 @@ async function startDiagnose() {
                         var type = evt.type || '';
                         if (type === 'plan') {
                             addEventMsg(contentDiv, 'plan', '📋 ' + (evt.message || '计划已制定'));
-                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-amber);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || '');
+                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--color-warning);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || '');
                         } else if (type === 'step_complete') {
                             addEventMsg(contentDiv, 'step', '✅ ' + (evt.current_step || ''));
-                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-green);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || evt.current_step || '');
+                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--color-success);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || evt.current_step || '');
                         } else if (type === 'report') {
                             addEventMsg(contentDiv, 'report', '📊 诊断报告已生成');
                         } else if (type === 'status') {
-                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-cyan);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || '');
+                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-primary);animation:pulseDot 1.5s infinite"></span> ' + (evt.message || '');
                         } else if (type === 'complete') {
                             var report = (evt.diagnosis && evt.diagnosis.report) || evt.response || '';
                             if (report) contentDiv.innerHTML += marked.parse(report);
@@ -409,17 +409,17 @@ async function startDiagnose() {
                             doneDiv.className = 'ref-source';
                             doneDiv.textContent = '✓ 诊断完成';
                             contentDiv.appendChild(doneDiv);
-                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-green)"></span> ✓ 诊断完成';
+                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--color-success)"></span> ✓ 诊断完成';
                         } else if (type === 'error') {
-                            contentDiv.innerHTML += '<p style="color:var(--accent-red)">❌ ' + escapeHtml(evt.message || '') + '</p>';
-                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--accent-red)"></span> ❌ 诊断出错';
+                            contentDiv.innerHTML += '<p style="color:var(--color-error)">错误: ' + escapeHtml(evt.message || '') + '</p>';
+                            DOM.diagStatusBar.innerHTML = '<span class="diag-dot" style="background:var(--color-error)"></span> 诊断出错';
                         }
                     } catch (e) { /* skip */ }
                 }
             }
         }
     } catch (err) {
-        contentDiv.innerHTML = '<p style="color:var(--accent-red)">请求失败: ' + escapeHtml(err.message) + '</p>';
+        contentDiv.innerHTML = '<p style="color:var(--color-error)">请求失败: ' + escapeHtml(err.message) + '</p>';
     }
 
     STATE.isStreaming = false;
@@ -480,46 +480,46 @@ function initDocUpload() {
     DOM.fileInput.addEventListener('change', async function (e) {
         var file = e.target.files[0];
         if (!file) return;
-        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-cyan);animation:pulseDot 1.5s infinite"></span> 上传中: ' + file.name + '...';
+        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-primary);animation:pulseDot 1.5s infinite"></span> 上传中: ' + file.name + '...';
         try {
             var result = await apiUpload(file);
             if (result.code === 200) {
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-green)"></span> ✅ 上传成功: ' + file.name;
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-success)"></span> ✓ 上传成功: ' + file.name;
             } else {
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 上传失败: ' + (result.message || '');
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 上传失败: ' + (result.message || '');
             }
         } catch (err) {
-            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 上传错误: ' + err.message;
+            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 上传错误: ' + err.message;
         }
     });
 
     DOM.indexDocsBtn.addEventListener('click', async function () {
-        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-cyan);animation:pulseDot 1.5s infinite"></span> 索引 uploads 目录...';
+        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-primary);animation:pulseDot 1.5s infinite"></span> 索引 uploads 目录...';
         try {
             var result = await apiPost('/api/index_directory', {});
             if (result.code === 200) {
                 var d = result.data || {};
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-green)"></span> ✅ 索引完成: ' + (d.success_count || 0) + '/' + (d.total_files || 0) + ' 文件';
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-success)"></span> ✓ 索引完成: ' + (d.success_count || 0) + '/' + (d.total_files || 0) + ' 文件';
             } else {
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 索引失败: ' + (result.message || '');
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 索引失败: ' + (result.message || '');
             }
         } catch (err) {
-            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 错误: ' + err.message;
+            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 错误: ' + err.message;
         }
     });
 
     DOM.indexAiopsBtn.addEventListener('click', async function () {
-        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-cyan);animation:pulseDot 1.5s infinite"></span> 索引 aiops-docs 目录...';
+        DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-primary);animation:pulseDot 1.5s infinite"></span> 索引 aiops-docs 目录...';
         try {
             var result = await apiPost('/api/index_directory', { directory_path: 'aiops-docs' });
             if (result.code === 200) {
                 var d = result.data || {};
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-green)"></span> ✅ 索引完成: ' + (d.success_count || 0) + '/' + (d.total_files || 0) + ' 文件';
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-success)"></span> ✓ 索引完成: ' + (d.success_count || 0) + '/' + (d.total_files || 0) + ' 文件';
             } else {
-                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 索引失败: ' + (result.message || '');
+                DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 索引失败: ' + (result.message || '');
             }
         } catch (err) {
-            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-red)"></span> ❌ 错误: ' + err.message;
+            DOM.docsStatus.innerHTML = '<span class="status-dot" style="background:var(--color-error)"></span> ✕ 错误: ' + err.message;
         }
     });
 }
@@ -568,13 +568,13 @@ async function loadEvalResults() {
 
         var dh = '';
         if (lowScores.length > 0) {
-            dh += '<div class="eval-section-title" style="color:var(--accent-red)">⚠ 低分样例（faithfulness<0.7 或 context_recall<0.5）</div>';
+            dh += '<div class="eval-section-title" style="color:var(--color-error)">⚠ 低分样例（faithfulness<0.7 或 context_recall<0.5）</div>';
             lowScores.forEach(function (item, i) {
                 var im = item.metrics || {};
                 dh += '<div class="eval-detail-item eval-low-score">';
                 dh += '<div class="eval-detail-header"><strong>#' + (i + 1) + '</strong> ';
-                dh += '<span class="metric-badge" style="color:' + (im.faithfulness >= 0.7 ? 'var(--accent-green)' : 'var(--accent-red)') + '">忠实度:' + (im.faithfulness !== undefined ? (im.faithfulness * 100).toFixed(1) + '%' : 'N/A') + '</span>';
-                dh += '<span class="metric-badge" style="color:' + (im.context_recall >= 0.5 ? 'var(--accent-green)' : 'var(--accent-red)') + '">召回率:' + (im.context_recall !== undefined ? (im.context_recall * 100).toFixed(1) + '%' : 'N/A') + '</span>';
+                dh += '<span class="metric-badge" style="color:' + (im.faithfulness >= 0.7 ? 'var(--color-success)' : 'var(--color-error)') + '">忠实度:' + (im.faithfulness !== undefined ? (im.faithfulness * 100).toFixed(1) + '%' : 'N/A') + '</span>';
+                dh += '<span class="metric-badge" style="color:' + (im.context_recall >= 0.5 ? 'var(--color-success)' : 'var(--color-error)') + '">召回率:' + (im.context_recall !== undefined ? (im.context_recall * 100).toFixed(1) + '%' : 'N/A') + '</span>';
                 dh += '</div>';
                 dh += '<div class="eval-compare"><div class="eval-field"><span class="eval-field-label">问题:</span><span>' + escapeHtml(item.question || '') + '</span></div>';
                 dh += '<div class="eval-field"><span class="eval-field-label">回答:</span><span>' + escapeHtml((item.answer || '').slice(0, 200)) + '</span></div>';
