@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 from app.models.request import ChatRequest, ClearRequest
 from app.models.response import SessionInfoResponse, ApiResponse
+from app.agent.mcp_client import format_exception_chain
 from app.services.rag_agent_service import rag_agent_service
 from loguru import logger
 
@@ -157,7 +158,7 @@ async def chat_stream(request: ChatRequest):
             logger.info(f"[会话 {request.id}] 流式对话完成")
 
         except Exception as e:
-            logger.error(f"流式对话接口错误: {e}")
+            logger.error(f"流式对话接口错误: {format_exception_chain(e)}")
             yield {
                 "event": "message",
                 "data": json.dumps({

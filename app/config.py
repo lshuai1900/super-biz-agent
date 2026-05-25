@@ -42,11 +42,16 @@ class Settings(BaseSettings):
     chunk_max_size: int = 800
     chunk_overlap: int = 100
 
-    # MCP 服务配置
+    # MCP 服务配置（transport: stdio | sse | streamable-http）
+    # 腾讯云托管 MCP 的 URL 通常含 /sse/，需使用 sse；本地 FastMCP 使用 streamable-http
     mcp_cls_transport: str = "streamable-http"
     mcp_cls_url: str = "http://localhost:8003/mcp"
     mcp_monitor_transport: str = "streamable-http"
     mcp_monitor_url: str = "http://localhost:8004/mcp"
+
+    # Prometheus
+    prometheus_base_url: str = "http://127.0.0.1:9090"
+    prometheus_request_timeout: float = 10.0
 
     @property
     def mcp_servers(self) -> Dict[str, Dict[str, Any]]:

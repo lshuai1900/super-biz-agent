@@ -20,8 +20,13 @@ from typing_extensions import TypedDict
 from langchain_qwq import ChatQwen
 
 from app.config import config
-from app.tools import get_current_time, retrieve_knowledge
-from app.agent.mcp_client import get_mcp_client_with_retry
+from app.tools import DEFAULT_LOCAL_AGENT_TOOLS
+from app.agent.mcp_client import (
+    get_mcp_client_with_retry,
+    load_mcp_tools_safe,
+    format_exception_chain,
+    suggest_mcp_transport,
+)
 
 # 阿里千问大模型和langchain集成参考： https://docs.langchain.com/oss/python/integrations/chat/qwen
 # 注意：需要配置环境变量 DASHSCOPE_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1 否则默认访问的是新加坡站点
@@ -94,8 +99,8 @@ class RagAgentService:
             streaming=streaming,
         )
 
-        # 定义基础工具
-        self.tools = [retrieve_knowledge, get_current_time]
+        # 定义基础工具（与 AIOps Planner/Executor 使用同一套默认本地工具）
+        self.tools = list(DEFAULT_LOCAL_AGENT_TOOLS)
 
         # MCP 客户端（延迟初始化，使用全局管理）
         self.mcp_tools: list = []
@@ -114,17 +119,25 @@ class RagAgentService:
         if self._agent_initialized:
             return
 
-        # 使用全局 MCP 客户端管理器（带重试拦截器）
+        for name, server in config.mcp_servers.items():
+            hint = suggest_mcp_transport(
+                str(server.get("url", "")),
+                str(server.get("transport", "")),
+            )
+            if hint:
+                logger.warning(f"MCP 配置 [{name}]: {hint}")
+
         mcp_client = await get_mcp_client_with_retry()
+        mcp_tools, mcp_err = await load_mcp_tools_safe(mcp_client)
+        if mcp_err:
+            logger.warning(
+                f"MCP 工具加载失败，将仅使用本地工具继续运行:\n{mcp_err}"
+            )
+            self.mcp_tools = []
+        else:
+            self.mcp_tools = mcp_tools
+            logger.info(f"成功加载 {len(mcp_tools)} 个 MCP 工具")
 
-        # 获取 MCP 工具
-        mcp_tools = await mcp_client.get_tools()
-        logger.info(f"成功加载 {len(mcp_tools)} 个 MCP 工具")
-
-        # 将 MCP 工具添加到实例变量中
-        self.mcp_tools = mcp_tools
-
-        # 合并所有工具
         all_tools = self.tools + self.mcp_tools
 
         self.agent = create_agent(
@@ -229,7 +242,10 @@ class RagAgentService:
             return ""
 
         except Exception as e:
-            logger.error(f"[会话 {session_id}] RAG Agent 查询失败（非流式）: {e}")
+            logger.error(
+                f"[会话 {session_id}] RAG Agent 查询失败（非流式）: "
+                f"{format_exception_chain(e)}"
+            )
             raise
 
     async def query_stream(
@@ -296,12 +312,11 @@ class RagAgentService:
             yield {"type": "complete"}
 
         except Exception as e:
-            logger.error(f"[会话 {session_id}] RAG Agent 查询失败（流式）: {e}")
-            yield {
-                "type": "error",
-                "data": str(e)
-            }
-            raise
+            detail = format_exception_chain(e)
+            logger.error(
+                f"[会话 {session_id}] RAG Agent 查询失败（流式）: {detail}"
+            )
+            yield {"type": "error", "data": detail}
 
     def get_session_history(self, session_id: str) -> list:
         """
