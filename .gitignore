@@ -1,92 +1,72 @@
+# Environment
+.env
+.env.*
+!.env.example
+
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual Environment
+# Virtualenv
+.venv/
 venv/
 env/
 ENV/
-.venv
 
 # uv
 .uv/
 
-# Poetry (legacy)
-poetry.lock
+# Logs
+*.log
+logs/
+log/
 
-# IDE
-.vscode/
+# Runtime output
+reports/
+uploads/
+tmp/
+temp/
+runtime/
+storage/
+
+# Database / Vector DB data
+volumes/
+milvus_data/
+etcd/
+minio/
+standalone/
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / OS
 .idea/
-*.swp
-*.swo
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude local files
+.claude/
+
+# Backup
+*.bak
+*.backup
+*.old
+*.tmp
 *~
+*.swp
 
 # CodeBuddy
 .codebuddy/
 
-# Environment
-.env.local
-.env
-
-# Reports
-reports/
-
-# Large model cache
-.cache/
-*.model
-*.bin
-
-# Scripts output
-scripts/__pycache__/
-
-# Logs
-logs/
-*.log
-*.pid
-
-# Database
-*.db
-*.sqlite
-
-# Milvus
-volumes/
-
-# Uploads
-uploads/
-*.tmp
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Pytest
-.pytest_cache/
-.coverage
-htmlcov/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Ruff
-.ruff_cache/
-
+# Poetry (legacy)
+poetry.lock

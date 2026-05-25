@@ -186,6 +186,9 @@ python scripts/generate_eval_dataset.py --source aiops-docs --count 10
 # 运行评估
 python scripts/run_ragas_eval.py --count 5
 
+# 启动 Milvus Lite（本地模式）
+python scripts/start_milvus_lite.py
+
 # 或通过 API
 curl -X POST http://localhost:9900/api/evaluation/run
 ```
@@ -238,15 +241,37 @@ curl -X POST http://localhost:9900/api/evaluation/run
 │   ├── cls_server.py      # CLS 日志服务
 │   └── monitor_server.py  # 监控服务
 ├── static/                # Web 前端
-├── aiops-docs/            # 运维知识库文档
-├── scripts/               # 工具脚本
-│   ├── generate_eval_dataset.py
-│   └── run_ragas_eval.py
-├── reports/               # 评估报告输出
-├── .env.example           # 环境变量模板
-├── vector-database.yml    # Docker Compose
-└── pyproject.toml         # 项目配置
+├── tests/                 # 测试
+├── aiops-docs/            # 运维知识库示例文档
+├── scripts/               # 启动与工具脚本
+│   ├── start_milvus_lite.py      # Milvus Lite 启动
+│   ├── start-windows.bat         # Windows 启动
+│   ├── stop-windows.bat          # Windows 停止
+│   ├── generate_eval_dataset.py  # QA 测试集生成
+│   └── run_ragas_eval.py         # Ragas 评估
+├── .env.example           # 环境变量模板（提交 Git）
+├── vector-database.yml    # Docker Compose 向量库
+├── docker-compose.dev.yml # Docker Compose 开发环境
+├── pyproject.toml         # 项目配置
+├── Makefile               # 常用命令
+└── README.md
 ```
+
+### 不提交 Git 的目录
+
+以下目录和文件是运行时生成的，已通过 `.gitignore` 排除，不会提交到 Git：
+
+| 目录/文件 | 说明 |
+|-----------|------|
+| `.env` | 本地环境变量配置（含密钥），使用 `.env.example` 作为模板 |
+| `.venv/` | Python 虚拟环境，通过 `uv sync` 重建 |
+| `logs/` | 运行日志 |
+| `reports/` | 评估报告输出 |
+| `uploads/` | 用户上传文件 |
+| `volumes/` | 向量库和数据库运行数据 |
+| `*.log` | 日志文件 |
+| `.claude/` | Claude Code 本地配置 |
+| `.pytest_cache/` | 测试缓存 |
 
 ## 常见问题
 
