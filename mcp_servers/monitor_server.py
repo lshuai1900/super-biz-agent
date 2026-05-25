@@ -1,18 +1,14 @@
 """智能运维监控 MCP Server
 
-本地实现的监控服务 MCP Server，提供：
-- 监控数据查询（CPU、内存、磁盘、网络等）
-- 进程信息查询
-- 历史工单查询
-- 服务信息查询
-
-用于支持运维 Agent 的故障排查场景。
+支持真实 Prometheus API 查询（需配置 PROMETHEUS_BASE_URL），
+未配置时降级为 mock 数据。
 """
 
 import logging
 import functools
 import json
 import random
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from fastmcp import FastMCP
@@ -23,6 +19,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("Monitor_MCP_Server")
+
+# 从环境变量读取 Prometheus 配置
+PROMETHEUS_BASE_URL = os.environ.get("PROMETHEUS_BASE_URL", "")
+PROMETHEUS_TIMEOUT = float(os.environ.get("PROMETHEUS_REQUEST_TIMEOUT", "10.0"))
 
 mcp = FastMCP("Monitor")
 
@@ -80,6 +80,37 @@ def log_tool_call(func):
 # 辅助函数
 # ============================================================
 
+
+def _query_prometheus(query: str) -> Optional[list]:
+    """查询真实 Prometheus API
+
+    Args:
+        query: PromQL 查询语句
+
+    Returns:
+        Optional[list]: 查询结果列表，失败返回 None
+    """
+    if not PROMETHEUS_BASE_URL:
+        return None
+
+    try:
+        import requests
+
+        url = f"{PROMETHEUS_BASE_URL}/api/v1/query"
+        resp = requests.get(url, params={"query": query}, timeout=PROMETHEUS_TIMEOUT)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "success":
+                return data["data"]["result"]
+        logger.warning(f"Prometheus 查询失败: {resp.status_code} - {resp.text[:200]}")
+        return None
+    except ImportError:
+        logger.warning("requests 未安装，无法查询真实 Prometheus")
+        return None
+    except Exception as e:
+        logger.error(f"Prometheus 查询异常: {e}")
+        return None
+
 def parse_time_or_default(time_str: Optional[str], default_offset_hours: int = 0) -> datetime:
     """解析时间字符串或返回默认时间。
 
@@ -121,6 +152,84 @@ def generate_time_series(base_time: datetime, minutes_offset: int, format_str: s
 # 监控数据查询工具
 # ============================================================
 
+def _query_cpu_from_prometheus(service_name: str) -> Optional[Dict[str, Any]]:
+    """从 Prometheus 查询真实 CPU 数据"""
+    results = _query_prometheus(f'node_cpu_seconds_total{{job="{service_name}"}}')
+    if not results:
+        return None
+
+    data_points = []
+    for r in results:
+        metric = r.get("metric", {})
+        value = r.get("value", [None, 0])
+        ts = datetime.fromtimestamp(value[0]) if value[0] else datetime.now()
+        data_points.append({
+            "timestamp": ts.strftime("%H:%M"),
+            "value": float(value[1]) if len(value) > 1 else 0,
+            "instance": metric.get("instance", ""),
+        })
+
+    values = [d["value"] for d in data_points]
+    return {
+        "service_name": service_name,
+        "metric_name": "cpu_usage_percent",
+        "interval": "1m",
+        "data_points": data_points,
+        "statistics": {
+            "avg": round(sum(values) / len(values), 2) if values else 0,
+            "max": max(values) if values else 0,
+            "min": min(values) if values else 0,
+        },
+        "source": "prometheus",
+    }
+
+
+def _generate_mock_cpu(service_name: str, start_dt, end_dt, interval_minutes: int) -> Dict[str, Any]:
+    """生成 mock CPU 数据"""
+    data_points = []
+    current_time = start_dt
+    time_index = 0
+    base_cpu = 10.0
+
+    while current_time <= end_dt:
+        if time_index < 3:
+            cpu_value = base_cpu + (time_index * 0.5)
+        else:
+            growth_factor = (time_index - 2) * 8.5
+            cpu_value = min(base_cpu + growth_factor, 96.0)
+        cpu_value = round(cpu_value + random.uniform(-2, 2), 1)
+        cpu_value = max(0, min(100, cpu_value))
+
+        data_points.append({
+            "timestamp": current_time.strftime("%H:%M"),
+            "value": cpu_value,
+        })
+        current_time += timedelta(minutes=interval_minutes)
+        time_index += 1
+
+    values = [d["value"] for d in data_points]
+    spike_detected = max(values) > 80.0 if values else False
+
+    return {
+        "service_name": service_name,
+        "metric_name": "cpu_usage_percent",
+        "interval": f"{interval_minutes}m",
+        "data_points": data_points,
+        "statistics": {
+            "avg": round(sum(values) / len(values), 2) if values else 0,
+            "max": max(values) if values else 0,
+            "min": min(values) if values else 0,
+            "spike_detected": spike_detected,
+        },
+        "alert_info": {
+            "triggered": spike_detected,
+            "threshold": 80.0,
+            "message": "CPU 使用率持续超过 80% 阈值" if spike_detected else "CPU 使用率正常",
+        },
+        "source": "mock",
+    }
+
+
 @mcp.tool()
 @log_tool_call
 def query_cpu_metrics(
@@ -131,147 +240,114 @@ def query_cpu_metrics(
 ) -> Dict[str, Any]:
     """查询服务的 CPU 使用率监控数据。
 
+    支持 Prometheus API（需配置 PROMETHEUS_BASE_URL），未配置时使用模拟数据。
+
     Args:
         service_name: 服务名称（必填）
-            示例: "data-sync-service"
-        
-        start_time: 开始时间（可选，字符串类型）
-            格式: "YYYY-MM-DD HH:MM:SS"
-            示例: "2026-02-14 10:00:00"
-            默认值: 如果不传，默认为当前时间的1小时前
-            注意: 必须使用字符串格式，而非时间戳
-        
-        end_time: 结束时间（可选，字符串类型）
-            格式: "YYYY-MM-DD HH:MM:SS"
-            示例: "2026-02-14 11:00:00"
-            默认值: 如果不传，默认为当前时间
-            注意: 必须使用字符串格式，而非时间戳
-        
-        interval: 数据聚合间隔（可选）
-            可选值: "1m" (1分钟), "5m" (5分钟), "1h" (1小时)
-            默认值: "1m"
-            说明: 控制数据点的时间间隔
+        start_time: 开始时间（可选，字符串格式 "YYYY-MM-DD HH:MM:SS"）
+        end_time: 结束时间（可选）
+        interval: 数据聚合间隔（可选，1m/5m/1h）
 
     Returns:
         Dict: CPU 监控数据
-            - service_name: 服务名称
-            - metric_name: 指标名称 (cpu_usage_percent)
-            - interval: 数据聚合间隔
-            - data_points: 数据点列表，每个点包含:
-                * timestamp: 时间点（格式: HH:MM）
-                * value: CPU 使用率百分比
-            - statistics: 统计信息
-                * average: 平均值
-                * max: 最大值
-                * min: 最小值
-            - alert: 告警信息（如有）
-                * triggered: 是否触发告警
-                * threshold: 告警阈值
-                * message: 告警消息
-    
-    使用示例:
-        # 示例1: 使用默认时间（最近1小时）
-        query_cpu_metrics(service_name="data-sync-service")
-        
-        # 示例2: 指定时间范围
-        query_cpu_metrics(
-            service_name="data-sync-service",
-            start_time="2026-02-14 10:00:00",
-            end_time="2026-02-14 11:00:00",
-            interval="5m"
-        )
-        
-        # 示例3: 只指定开始时间（结束时间自动为当前时间）
-        query_cpu_metrics(
-            service_name="data-sync-service",
-            start_time="2026-02-14 10:00:00"
-        )
     """
-    # 解析时间参数
+    # 先尝试真实 Prometheus
+    prom_result = _query_cpu_from_prometheus(service_name)
+    if prom_result:
+        return prom_result
+
+    # 降级到 mock
     start_dt = parse_time_or_default(start_time, default_offset_hours=-1)
     end_dt = parse_time_or_default(end_time, default_offset_hours=0)
-    
-    # 解析间隔时间（interval: 1m, 5m, 1h 等）
-    interval_minutes = 1  # 默认 1 分钟
+
+    interval_minutes = 1
     if interval.endswith('m'):
         interval_minutes = int(interval[:-1])
     elif interval.endswith('h'):
         interval_minutes = int(interval[:-1]) * 60
 
-    # 动态生成 CPU 使用率数据：从低到高逐渐增长
+    return _generate_mock_cpu(service_name, start_dt, end_dt, interval_minutes)
+
+
+def _generate_mock_memory(service_name: str, start_dt, end_dt, interval_minutes: int) -> Dict[str, Any]:
+    """生成 mock 内存数据"""
     data_points = []
     current_time = start_dt
     time_index = 0
-
-    # 初始 CPU 使用率（10%）
-    base_cpu = 10.0
+    base_memory = 30.0
+    total_gb = 8.0
 
     while current_time <= end_dt:
-        # CPU 使用率逐渐升高的算法：
-        # - 前几个数据点保持在 10% 左右
-        # - 然后开始快速上升
-        # - 最终达到 95% 左右
-
         if time_index < 3:
-            # 初始阶段：10% 左右波动
-            cpu_value = base_cpu + (time_index * 0.5)
+            memory_value = base_memory + (time_index * 1.0)
         else:
-            # 上升阶段：使用指数增长模型
-            growth_factor = (time_index - 2) * 8.5
-            cpu_value = min(base_cpu + growth_factor, 96.0)
+            growth_factor = (time_index - 2) * 5.5
+            memory_value = min(base_memory + growth_factor, 85.0)
+        memory_value = round(memory_value + random.uniform(-1, 1), 1)
+        memory_value = max(0, min(100, memory_value))
 
-        # 添加一些随机波动（±2%）
-        cpu_value = round(cpu_value + random.uniform(-2, 2), 1)
-        cpu_value = max(0, min(100, cpu_value))  # 确保在 0-100 范围内
-
-        data_point = {
+        data_points.append({
             "timestamp": current_time.strftime("%H:%M"),
-            "value": cpu_value,
-            "process_id": "pid-12345"
-        }
-
-        data_points.append(data_point)
-
-        # 下一个时间点
+            "value": memory_value,
+            "used_gb": round((memory_value / 100.0) * total_gb, 2),
+            "total_gb": total_gb,
+        })
         current_time += timedelta(minutes=interval_minutes)
         time_index += 1
 
-    # 计算统计信息
-    if data_points:
-        values = [d["value"] for d in data_points]
-        avg_value = round(sum(values) / len(values), 2)
-        max_value = max(values)
-        min_value = min(values)
+    values = [d["value"] for d in data_points]
+    memory_pressure = max(values) > 70.0 if values else False
 
-        # 检测是否有 CPU 突增（超过 80%）
-        spike_detected = max_value > 80.0
+    return {
+        "service_name": service_name,
+        "metric_name": "memory_usage_percent",
+        "interval": f"{interval_minutes}m",
+        "data_points": data_points,
+        "statistics": {
+            "avg": round(sum(values) / len(values), 2) if values else 0,
+            "max": max(values) if values else 0,
+            "min": min(values) if values else 0,
+            "memory_pressure": memory_pressure,
+        },
+        "alert_info": {
+            "triggered": memory_pressure,
+            "threshold": 70.0,
+            "message": "内存使用率超过 70% 阈值" if memory_pressure else "内存使用率正常",
+        },
+        "source": "mock",
+    }
 
-        return {
-            "service_name": service_name,
-            "metric_name": "cpu_usage_percent",
-            "interval": interval,
-            "data_points": data_points,
-            "statistics": {
-                "avg": avg_value,
-                "max": max_value,
-                "min": min_value,
-                "p95": round(sorted(values)[int(len(values) * 0.95)] if len(values) > 1 else max_value, 2),
-                "spike_detected": spike_detected
-            },
-            "alert_info": {
-                "triggered": spike_detected,
-                "threshold": 80.0,
-                "message": "CPU 使用率持续超过 80% 阈值" if spike_detected else "CPU 使用率正常"
-            }
-        }
-    else:
-        return {
-            "service_name": service_name,
-            "metric_name": "cpu_usage_percent",
-            "interval": interval,
-            "data_points": [],
-            "statistics": {},
-        }
+
+def _query_memory_from_prometheus(service_name: str) -> Optional[Dict[str, Any]]:
+    """从 Prometheus 查询真实内存数据"""
+    results = _query_prometheus(f'node_memory_MemTotal_bytes{{job="{service_name}"}}')
+    if not results:
+        return None
+
+    data_points = []
+    for r in results:
+        metric = r.get("metric", {})
+        value = r.get("value", [None, 0])
+        ts = datetime.fromtimestamp(value[0]) if value[0] else datetime.now()
+        data_points.append({
+            "timestamp": ts.strftime("%H:%M"),
+            "value": float(value[1]) / 1024 / 1024 / 1024 if len(value) > 1 else 0,
+            "instance": metric.get("instance", ""),
+        })
+
+    values = [d["value"] for d in data_points]
+    return {
+        "service_name": service_name,
+        "metric_name": "memory_usage_gb",
+        "interval": "1m",
+        "data_points": data_points,
+        "statistics": {
+            "avg": round(sum(values) / len(values), 2) if values else 0,
+            "max": max(values) if values else 0,
+            "min": min(values) if values else 0,
+        },
+        "source": "prometheus",
+    }
 
 
 @mcp.tool()
@@ -284,148 +360,33 @@ def query_memory_metrics(
 ) -> Dict[str, Any]:
     """查询服务的内存使用监控数据。
 
+    支持 Prometheus API（需配置 PROMETHEUS_BASE_URL），未配置时使用模拟数据。
+
     Args:
         service_name: 服务名称（必填）
-            示例: "data-sync-service"
-        
-        start_time: 开始时间（可选，字符串类型）
-            格式: "YYYY-MM-DD HH:MM:SS"
-            示例: "2026-02-14 10:00:00"
-            默认值: 如果不传，默认为当前时间的1小时前
-            注意: 必须使用字符串格式，而非时间戳
-        
-        end_time: 结束时间（可选，字符串类型）
-            格式: "YYYY-MM-DD HH:MM:SS"
-            示例: "2026-02-14 11:00:00"
-            默认值: 如果不传，默认为当前时间
-            注意: 必须使用字符串格式，而非时间戳
-        
-        interval: 数据聚合间隔（可选）
-            可选值: "1m" (1分钟), "5m" (5分钟), "1h" (1小时)
-            默认值: "1m"
+        start_time: 开始时间（可选）
+        end_time: 结束时间（可选）
+        interval: 数据聚合间隔（可选，1m/5m/1h）
 
     Returns:
         Dict: 内存监控数据
-            - service_name: 服务名称
-            - metric_name: 指标名称 (memory_usage_percent)
-            - interval: 数据聚合间隔
-            - data_points: 数据点列表，每个点包含:
-                * timestamp: 时间点（格式: HH:MM）
-                * value: 内存使用率百分比
-                * used_gb: 已使用内存（GB）
-                * total_gb: 总内存（GB）
-            - statistics: 统计信息
-                * average: 平均值
-                * max: 最大值
-                * min: 最小值
-            - alert: 告警信息（如有）
-                * triggered: 是否触发告警
-                * threshold: 告警阈值
-                * message: 告警消息
-    
-    使用示例:
-        # 示例1: 使用默认时间（最近1小时）
-        query_memory_metrics(service_name="data-sync-service")
-        
-        # 示例2: 指定时间范围
-        query_memory_metrics(
-            service_name="data-sync-service",
-            start_time="2026-02-14 10:00:00",
-            end_time="2026-02-14 11:00:00",
-            interval="5m"
-        )
     """
-    # 解析时间参数
+    # 先尝试真实 Prometheus
+    prom_result = _query_memory_from_prometheus(service_name)
+    if prom_result:
+        return prom_result
+
+    # 降级到 mock
     start_dt = parse_time_or_default(start_time, default_offset_hours=-1)
     end_dt = parse_time_or_default(end_time, default_offset_hours=0)
-    
-    # 解析间隔时间（interval: 1m, 5m, 1h 等）
-    interval_minutes = 1  # 默认 1 分钟
+
+    interval_minutes = 1
     if interval.endswith('m'):
         interval_minutes = int(interval[:-1])
     elif interval.endswith('h'):
         interval_minutes = int(interval[:-1]) * 60
-    
-    # 动态生成内存使用率数据：从低到高逐渐增长
-    data_points = []
-    current_time = start_dt
-    time_index = 0
-    
-    # 初始内存使用率（30%）
-    base_memory = 30.0
-    total_gb = 8.0  # 总内存 8GB
-    
-    while current_time <= end_dt:
-        # 内存使用率逐渐升高的算法：
-        # - 前几个数据点保持在 30% 左右
-        # - 然后开始逐步上升
-        # - 最终达到 85% 左右
-        
-        if time_index < 3:
-            # 初始阶段：30% 左右波动
-            memory_value = base_memory + (time_index * 1.0)
-        else:
-            # 上升阶段：使用线性增长模型（内存增长比 CPU 慢）
-            growth_factor = (time_index - 2) * 5.5
-            memory_value = min(base_memory + growth_factor, 85.0)
-        
-        # 添加一些随机波动（±1%）
-        memory_value = round(memory_value + random.uniform(-1, 1), 1)
-        memory_value = max(0, min(100, memory_value))  # 确保在 0-100 范围内
-        
-        # 计算已使用内存（GB）
-        used_gb = round((memory_value / 100.0) * total_gb, 2)
-        
-        data_point = {
-            "timestamp": current_time.strftime("%H:%M"),
-            "value": memory_value,
-            "used_gb": used_gb,
-            "total_gb": total_gb
-        }
-        
-        data_points.append(data_point)
-        
-        # 下一个时间点
-        current_time += timedelta(minutes=interval_minutes)
-        time_index += 1
-    
-    # 计算统计信息
-    if data_points:
-        values = [d["value"] for d in data_points]
-        avg_value = round(sum(values) / len(values), 2)
-        max_value = max(values)
-        min_value = min(values)
-        
-        # 检测是否有内存压力（超过 70%）
-        memory_pressure = max_value > 70.0
-        
-        return {
-            "service_name": service_name,
-            "metric_name": "memory_usage_percent",
-            "interval": interval,
-            "data_points": data_points,
-            "statistics": {
-                "avg": avg_value,
-                "max": max_value,
-                "min": min_value,
-                "p95": round(sorted(values)[int(len(values) * 0.95)] if len(values) > 1 else max_value, 2),
-                "memory_pressure": memory_pressure
-            },
-            "alert_info": {
-                "triggered": memory_pressure,
-                "threshold": 70.0,
-                "message": "内存使用率超过 70% 阈值，存在内存压力" if memory_pressure else "内存使用率正常"
-            }
-        }
-    else:
-        return {
-            "service_name": service_name,
-            "metric_name": "memory_usage_percent",
-            "interval": interval,
-            "data_points": [],
-            "statistics": {},
-            "error": "时间范围无效或没有生成数据点"
-        }
+
+    return _generate_mock_memory(service_name, start_dt, end_dt, interval_minutes)
 
 
 

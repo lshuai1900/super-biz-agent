@@ -2,6 +2,7 @@
 AIOps 智能运维接口
 """
 
+import asyncio
 import json
 from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
@@ -126,6 +127,8 @@ async def diagnose_stream(request: AIOpsRequest):
 
     async def event_generator():
         try:
+            last_event_time = asyncio.get_event_loop().time()
+
             async for event in aiops_service.diagnose(session_id=session_id):
                 # 发送事件
                 yield {
@@ -133,12 +136,16 @@ async def diagnose_stream(request: AIOpsRequest):
                     "data": json.dumps(event, ensure_ascii=False)
                 }
 
+                last_event_time = asyncio.get_event_loop().time()
+
                 # 如果是完成或错误事件，结束流
                 if event.get("type") in ["complete", "error"]:
                     break
 
             logger.info(f"[会话 {session_id}] AIOps 诊断流式响应完成")
 
+        except asyncio.CancelledError:
+            logger.warning(f"[会话 {session_id}] AIOps 诊断流被取消")
         except Exception as e:
             logger.error(f"[会话 {session_id}] AIOps 诊断流式响应异常: {e}", exc_info=True)
             yield {

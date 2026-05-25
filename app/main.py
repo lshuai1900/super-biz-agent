@@ -12,8 +12,9 @@ import os
 
 from app.config import config
 from loguru import logger
-from app.api import chat, health, file, aiops
+from app.api import chat, health, file, aiops, agent, evaluation
 from app.core.milvus_client import milvus_manager
+from app.services.memory_service import memory_service
 
 
 @asynccontextmanager
@@ -30,7 +31,16 @@ async def lifespan(app: FastAPI):
     logger.info("🔌 正在连接 Milvus...")
     milvus_manager.connect()
     logger.info("✅ Milvus 连接成功")
-    
+
+    # 初始化 PostgreSQL 记忆服务
+    logger.info("🗄️ 正在初始化 PostgreSQL 记忆服务...")
+    import asyncio
+    try:
+        await memory_service.initialize()
+        logger.info("✅ PostgreSQL 记忆服务初始化完成")
+    except Exception as e:
+        logger.warning(f"⚠️ PostgreSQL 记忆服务初始化失败 (不影响启动): {e}")
+
     logger.info("=" * 60)
     
     yield
@@ -63,6 +73,8 @@ app.include_router(health.router, tags=["健康检查"])
 app.include_router(chat.router, prefix="/api", tags=["对话"])
 app.include_router(file.router, prefix="/api", tags=["文件管理"])
 app.include_router(aiops.router, prefix="/api", tags=["AIOps智能运维"])
+app.include_router(agent.router, prefix="/api", tags=["统一Agent"])
+app.include_router(evaluation.router, prefix="/api", tags=["RAG评估"])
 
 # 挂载静态文件
 static_dir = "static"

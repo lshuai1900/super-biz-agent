@@ -44,6 +44,18 @@ poetry.lock
 
 # Environment
 .env.local
+.env
+
+# Reports
+reports/
+
+# Large model cache
+.cache/
+*.model
+*.bin
+
+# Scripts output
+scripts/__pycache__/
 
 # Logs
 logs/

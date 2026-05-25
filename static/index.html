@@ -3,128 +3,289 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能OnCall助手</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <!-- Markdown 渲染库 -->
+    <title>OnCall Agent · 智能运维系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-    <!-- 代码高亮库（可选） -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <div class="app-layout">
-        <!-- 左侧边栏 -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2 class="sidebar-title">智能OnCall助手</h2>
-            </div>
-            
-            <div class="sidebar-content">
-                <button class="new-chat-btn" id="newChatBtn">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <span>新建对话</span>
-                </button>
-                
-                <div class="chat-history-section">
-                    <div class="history-header">
-                        <span>近期对话</span>
-                    </div>
-                    <div class="chat-history-list" id="chatHistoryList">
-                        <!-- 历史对话列表将在这里动态生成 -->
-                    </div>
+    <div class="app-container">
+        <!-- Ambient Background -->
+        <div class="bg-layer">
+            <div class="bg-grid"></div>
+            <div class="bg-orb orb-1"></div>
+            <div class="bg-orb orb-2"></div>
+            <div class="bg-orb orb-3"></div>
+        </div>
+
+        <!-- ==================== Sidebar ==================== -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
+                    <polygon points="16,2 30,16 16,30 2,16" stroke="url(#brand-grad)" stroke-width="1.5" fill="none"/>
+                    <circle cx="16" cy="16" r="4" fill="url(#brand-grad)"/>
+                    <defs>
+                        <linearGradient id="brand-grad" x1="2" y1="2" x2="30" y2="30">
+                            <stop offset="0%" stop-color="#00d4ff"/>
+                            <stop offset="100%" stop-color="#3b82f6"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="brand-text">
+                    <span class="brand-name">OnCall Agent</span>
+                    <span class="brand-sub">智能运维系统</span>
                 </div>
-                
+            </div>
+
+            <button class="new-chat-btn" id="newChatBtn">
+                <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                <span>新建对话</span>
+            </button>
+
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-page="chat">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>智能对话</span>
+                </button>
+                <button class="nav-btn" data-page="rag">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>知识库问答</span>
+                </button>
+                <button class="nav-btn" data-page="aiops">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" stroke-width="1.5"/><path d="M2 17l10 5 10-5" stroke="currentColor" stroke-width="1.5"/><path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>智能运维诊断</span>
+                    <span class="nav-badge">AI</span>
+                </button>
+                <button class="nav-btn" data-page="docs">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>文档管理</span>
+                </button>
+                <button class="nav-btn" data-page="eval">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="1.5"/><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="1.5"/></svg>
+                    <span>RAG 评估</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-history">
+                <div class="history-header">
+                    <span>会话历史</span>
+                    <span class="history-count" id="historyCount">0</span>
+                </div>
+                <div class="chat-history-list" id="chatHistoryList"></div>
+            </div>
+
+            <div class="sidebar-footer">
+                <span class="status-dot"></span>
+                <span class="status-text">系统运行中</span>
+                <span class="version-text">v1.0</span>
             </div>
         </aside>
 
-        <!-- 主内容区域 -->
+        <!-- ==================== Main Content ==================== -->
         <main class="main-content">
-            <button class="ai-ops-top-btn" id="aiOpsSidebarBtn">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>AI Ops</span>
-            </button>
-            <div class="chat-container">
-                <div class="welcome-greeting" id="welcomeGreeting">
-                    <p>你好！我是智能Oncall小助手</p>
-                </div>
-                <div class="chat-messages" id="chatMessages">
-                </div>
-                
-                <div class="chat-input-container">
-                    <div class="input-group-wrapper">
-                        <div class="input-wrapper">
-                            <input type="text" id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input">
-                            <div class="input-bottom-bar">
-                                <div class="tools-btn-wrapper">
-                                    <button class="tools-btn" id="toolsBtn" title="更多选项">
-                                        <svg class="tools-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                            <circle cx="19" cy="12" r="1.5" fill="currentColor"/>
-                                            <circle cx="5" cy="12" r="1.5" fill="currentColor"/>
-                                        </svg>
-                                    </button>
-                                    <div class="tools-menu" id="toolsMenu">
-                                        <div class="tools-menu-item" id="uploadFileItem">
-                                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                            </svg>
-                                            <span>上传文件</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="right-actions">
-                                    <div class="mode-selector-wrapper">
-                                        <button class="mode-selector-btn" id="modeSelectorBtn">
-                                            <span id="currentModeText">快速</span>
-                                            <svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                            </svg>
-                                        </button>
-                                        <div class="mode-dropdown" id="modeDropdown">
-                                            <div class="dropdown-header">选择对话方式</div>
-                                            <div class="dropdown-item active" data-mode="quick">
-                                                <div class="dropdown-item-main">
-                                                    <span>快速</span>
-                                                    <span class="badge-new">新</span>
-                                                </div>
-                                                <div class="dropdown-item-sub">快速对话</div>
-                                            </div>
-                                            <div class="dropdown-item" data-mode="stream">
-                                                <div class="dropdown-item-main">
-                                                    <span>流式</span>
-                                                </div>
-                                                <div class="dropdown-item-sub">流式对话</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button class="send-btn-circle" id="sendButton" title="发送">
-                                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                        </svg>
+
+            <!-- ===== Page: 智能对话 ===== -->
+            <div class="page active" id="page-chat">
+                <div class="page-inner">
+                    <div class="page-header">
+                        <h3>智能对话</h3>
+                        <div class="header-actions">
+                            <select id="agentModeSelect" class="mode-select">
+                                <option value="auto">⚡ 自动模式</option>
+                                <option value="chat">💬 普通对话</option>
+                                <option value="rag">📚 知识库问答</option>
+                                <option value="aiops">🔧 智能运维诊断</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="welcome-screen">
+                            <div class="welcome-icon">
+                                <svg viewBox="0 0 48 48" fill="none" width="64" height="64">
+                                    <polygon points="24,4 44,24 24,44 4,24" stroke="url(#welcome-grad)" stroke-width="2" fill="none"/>
+                                    <circle cx="24" cy="24" r="6" fill="url(#welcome-grad)"/>
+                                    <defs>
+                                        <linearGradient id="welcome-grad" x1="4" y1="4" x2="44" y2="44">
+                                            <stop offset="0%" stop-color="#00d4ff"/>
+                                            <stop offset="100%" stop-color="#3b82f6"/>
+                                        </linearGradient>
+                                    </defs>
+                                </svg>
+                            </div>
+                            <h2 class="welcome-title">欢迎使用 OnCall Agent</h2>
+                            <p class="welcome-desc">智能运维助手，支持知识库问答与自动故障诊断</p>
+                            <div class="welcome-suggestions">
+                                <button class="suggestion-chip" data-text="系统如何处理告警？">系统如何处理告警？</button>
+                                <button class="suggestion-chip" data-text="CPU 告警排查步骤">CPU 告警排查步骤</button>
+                                <button class="suggestion-chip" data-text="介绍一下系统架构">介绍一下系统架构</button>
+                                <button class="suggestion-chip" data-text="如何进行故障诊断？">如何进行故障诊断？</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <div class="input-group">
+                            <div class="input-wrapper">
+                                <textarea id="messageInput" placeholder="输入问题，按 Enter 发送（Shift+Enter 换行）" rows="1" maxlength="2000" class="message-input"></textarea>
+                                <div class="input-actions">
+                                    <span class="char-count" id="chatCharCount">0/2000</span>
+                                    <button class="send-btn" id="sendButton" title="发送">
+                                        <svg viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <input type="file" id="fileInput" accept=".txt,.md,.markdown" style="display: none;">
+                </div>
+            </div>
+
+            <!-- ===== Page: 知识库问答 ===== -->
+            <div class="page" id="page-rag">
+                <div class="page-inner">
+                    <div class="page-header">
+                        <h3>知识库问答</h3>
+                    </div>
+                    <div class="chat-messages" id="ragMessages">
+                        <div class="welcome-screen">
+                            <div class="welcome-icon">
+                                <svg viewBox="0 0 48 48" fill="none" width="64" height="64">
+                                    <path d="M8 36V8a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v28" stroke="#00d4ff" stroke-width="2"/>
+                                    <path d="M8 36a4 4 0 0 0 4 4h28" stroke="#00d4ff" stroke-width="2"/>
+                                    <path d="M18 16h12M18 24h12" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                            </div>
+                            <h2 class="welcome-title">知识库问答</h2>
+                            <p class="welcome-desc">基于已索引的运维文档，快速检索答案</p>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <div class="input-group">
+                            <div class="input-wrapper">
+                                <textarea id="ragInput" placeholder="询问知识库内容..." rows="1" maxlength="2000" class="message-input"></textarea>
+                                <div class="input-actions">
+                                    <span class="char-count" id="ragCharCount">0/2000</span>
+                                    <button class="send-btn" id="ragSendBtn" title="发送">
+                                        <svg viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Page: 智能运维诊断 ===== -->
+            <div class="page" id="page-aiops">
+                <div class="page-inner">
+                    <div class="page-header">
+                        <h3>智能运维诊断</h3>
+                        <span class="header-badge">Plan-Execute-Replan</span>
+                    </div>
+                    <div class="chat-messages" id="aiopsMessages">
+                        <div class="welcome-screen">
+                            <div class="welcome-icon">
+                                <svg viewBox="0 0 48 48" fill="none" width="64" height="64">
+                                    <path d="M24 4v8M24 36v8M4 24h8M36 24h8" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+                                    <circle cx="24" cy="24" r="10" stroke="#f59e0b" stroke-width="2"/>
+                                    <circle cx="24" cy="24" r="4" fill="#f59e0b" opacity="0.5"/>
+                                </svg>
+                            </div>
+                            <h2 class="welcome-title">智能运维诊断</h2>
+                            <p class="welcome-desc">自动检测系统状态，提供故障排查与诊断报告</p>
+                            <button class="diagnose-btn" id="aiopsStartBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" stroke-width="1.5"/><path d="M2 17l10 5 10-5" stroke="currentColor" stroke-width="1.5"/><path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5"/></svg>
+                                <span>开始诊断</span>
+                            </button>
+                            <div class="diag-status" id="diagStatusBar">
+                                <span class="diag-dot"></span>
+                                点击按钮开始系统诊断
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Page: 文档管理 ===== -->
+            <div class="page" id="page-docs">
+                <div class="page-inner">
+                    <div class="page-header">
+                        <h3>文档管理</h3>
+                    </div>
+                    <div class="docs-content">
+                        <div class="upload-zone" id="uploadBox">
+                            <svg viewBox="0 0 24 24" fill="none" width="48" height="48"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.5"/></svg>
+                            <p class="upload-title">点击上传 Markdown / 文本文件</p>
+                            <p class="upload-hint">支持 .md, .txt 格式，自动建立向量索引</p>
+                        </div>
+                        <input type="file" id="fileInput" accept=".txt,.md,.markdown" style="display:none">
+                        <div class="docs-actions">
+                            <button class="btn btn-secondary" id="indexDocsBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M3 3v18h18" stroke="currentColor" stroke-width="1.5"/><path d="M7 16l4-4 4 4 5-5" stroke="currentColor" stroke-width="1.5"/></svg>
+                                索引全部文档
+                            </button>
+                            <button class="btn btn-secondary" id="indexAiopsBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M3 3v18h18" stroke="currentColor" stroke-width="1.5"/><path d="M7 16l4-4 4 4 5-5" stroke="currentColor" stroke-width="1.5"/></svg>
+                                索引运维知识库
+                            </button>
+                        </div>
+                        <div class="docs-status" id="docsStatus">
+                            <span class="status-dot status-dot--idle"></span>
+                            就绪
+                        </div>
+                        <div class="docs-hint">
+                            <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M12 16v-4M12 8h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                            <span>上传文档后自动索引至 Milvus 向量库，即可在对话中检索</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Page: RAG 评估 ===== -->
+            <div class="page" id="page-eval">
+                <div class="page-inner">
+                    <div class="page-header">
+                        <h3>RAG 评估</h3>
+                        <span class="header-badge">Ragas</span>
+                    </div>
+                    <div class="eval-content">
+                        <div class="eval-actions">
+                            <button class="btn btn-primary" id="evalGenerateBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.5"/></svg>
+                                生成测试集
+                            </button>
+                            <button class="btn btn-primary" id="evalRunBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="1.5"/><polyline points="22 4 12 14.01 9 11.01" stroke="currentColor" stroke-width="1.5"/></svg>
+                                运行评估
+                            </button>
+                            <button class="btn btn-secondary" id="evalRefreshBtn">
+                                <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" stroke-width="1.5"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" stroke-width="1.5"/></svg>
+                                刷新结果
+                            </button>
+                        </div>
+                        <div class="eval-metrics" id="evalMetrics">
+                            <div class="eval-placeholder">
+                                <svg viewBox="0 0 24 24" fill="none" width="40" height="40"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>
+                                <p>尚未运行评估</p>
+                                <p class="eval-placeholder-sub">生成测试集后运行评估，查看 RAG 质量指标</p>
+                            </div>
+                        </div>
+                        <div class="eval-details" id="evalDetails"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Loading Overlay ===== -->
+            <div id="loadingOverlay" class="loading-overlay" style="display:none">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text" id="loadingText">处理中...</div>
+                    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
                 </div>
             </div>
         </main>
-    </div>
-
-    <!-- 加载遮罩层 -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div class="loading-text">智能运维分析中，请稍候...</div>
-            <div class="loading-subtext">后端正在处理，请耐心等待</div>
-        </div>
     </div>
 
     <script src="/static/app.js"></script>

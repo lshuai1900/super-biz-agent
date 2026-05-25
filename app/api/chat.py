@@ -181,7 +181,7 @@ async def clear_session(request: ClearRequest):
         操作结果
     """
     try:
-        success = rag_agent_service.clear_session(request.session_id)
+        success = await rag_agent_service.clear_session(request.session_id)
         logger.info(f"清空会话: {request.session_id}, 结果: {success}")
 
         return ApiResponse(
@@ -206,7 +206,7 @@ async def get_session_info(session_id: str) -> SessionInfoResponse:
         会话信息
     """
     try:
-        history = rag_agent_service.get_session_history(session_id)
+        history = await rag_agent_service.get_session_history(session_id)
 
         return SessionInfoResponse(
             session_id=session_id,
@@ -217,3 +217,36 @@ async def get_session_info(session_id: str) -> SessionInfoResponse:
     except Exception as e:
         logger.error(f"获取会话信息错误: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/sessions")
+async def list_sessions():
+    """获取所有会话列表"""
+    try:
+        from app.services.memory_service import memory_service
+        sessions = await memory_service.list_conversations()
+        return {"code": 200, "message": "success", "data": sessions}
+    except Exception as e:
+        logger.error(f"获取会话列表错误: {e}")
+        return {"code": 500, "message": str(e), "data": []}
+
+
+@router.get("/chat/session/{session_id}/summary")
+async def get_session_summary(session_id: str):
+    """获取会话摘要"""
+    try:
+        from app.services.memory_service import memory_service
+        summary = await memory_service.get_latest_summary(session_id)
+        summaries = await memory_service.get_summary_list(session_id)
+        return {
+            "code": 200,
+            "message": "success",
+            "data": {
+                "session_id": session_id,
+                "latest_summary": summary,
+                "summaries": summaries,
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取会话摘要错误: {e}")
+        return {"code": 500, "message": str(e), "data": None}

@@ -1,11 +1,13 @@
 """腾讯云 CLS (Cloud Log Service) MCP Server
 
-本地实现的 CLS 日志服务 MCP Server，提供日志查询、检索和分析功能。
+支持真实腾讯云 CLS API 查询（通过 SecretId/SecretKey），
+未配置时降级为 mock 数据。
 """
 
 import logging
 import functools
 import json
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from fastmcp import FastMCP
@@ -16,6 +18,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("CLS_MCP_Server")
+
+# 从环境变量读取真实腾讯云配置
+TENCENT_SECRET_ID = os.environ.get("TENCENTCLOUD_SECRET_ID", "")
+TENCENT_SECRET_KEY = os.environ.get("TENCENTCLOUD_SECRET_KEY", "")
+TENCENT_REGION = os.environ.get("TENCENTCLOUD_REGION", "ap-beijing")
+TENCENT_TOPIC_ID = os.environ.get("TENCENTCLOUD_TOPIC_ID", "")
 
 mcp = FastMCP("CLS")
 
@@ -343,6 +351,124 @@ def search_topic_by_service_name(
     }
 
 
+def _call_real_cls_api(
+    topic_id: str,
+    start_time: int,
+    end_time: int,
+    query: Optional[str] = None,
+    limit: int = 100,
+) -> Optional[Dict[str, Any]]:
+    """调用真实腾讯云 CLS API 查询日志。
+
+    需要配置 TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY 环境变量。
+    """
+    if not TENCENT_SECRET_ID or not TENCENT_SECRET_KEY:
+        logger.info("腾讯云 CLS 未配置真实凭据，使用 mock 数据")
+        return None
+
+    try:
+        from tencentcloud.common import credential
+        from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+        from tencentcloud.cls.v20201016 import cls_client, models
+
+        cred = credential.Credential(TENCENT_SECRET_ID, TENCENT_KEY)
+        client = cls_client.ClsClient(cred, TENCENT_REGION)
+
+        req = models.SearchLogRequest()
+        req.TopicId = topic_id
+        req.From = start_time
+        req.To = end_time
+        req.Query = query or ""
+        req.Limit = limit
+
+        resp = client.SearchLog(req)
+        logs = []
+        if resp.Results:
+            for r in resp.Results:
+                logs.append({
+                    "timestamp": r.get("Time", ""),
+                    "level": r.get("Level", ""),
+                    "message": r.get("Message", ""),
+                })
+
+        return {
+            "topic_id": topic_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "query": query,
+            "limit": limit,
+            "total": len(logs),
+            "logs": logs,
+            "took_ms": 0,
+            "message": f"CLS 查询成功，返回 {len(logs)} 条日志",
+            "source": "tencentcloud",
+        }
+    except ImportError:
+        logger.warning("tencentcloud-sdk-python 未安装，使用 mock 数据")
+        return None
+    except Exception as e:
+        logger.error(f"CLS API 调用失败: {e}")
+        return None
+
+
+def _generate_mock_logs(
+    topic_id: str,
+    start_time: int,
+    end_time: int,
+    query: Optional[str] = None,
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """生成模拟日志数据"""
+    logs = []
+    current_time_ms = start_time
+    count = 0
+    max_logs_by_time = int((end_time - start_time) / (60 * 1000)) + 1
+    actual_limit = min(limit, max_logs_by_time)
+
+    levels = ["INFO", "WARN", "ERROR", "DEBUG"]
+    messages = [
+        "正在同步元数据……",
+        "请求处理完成，耗时 45ms",
+        "连接池状态: active=12, idle=5",
+        "缓存命中率: 87.5%",
+        "健康检查通过",
+        "任务队列长度: 3",
+        "数据库查询完成，影响行数: 42",
+        "内存使用率: 65.3%",
+        "CPU 使用率: 23.1%",
+    ]
+
+    for _ in range(actual_limit):
+        log_time = datetime.fromtimestamp(current_time_ms / 1000)
+        level = levels[count % len(levels)]
+        msg = messages[count % len(messages)]
+
+        if query and query.lower() not in msg.lower() and query.lower() not in level.lower():
+            current_time_ms += 60 * 1000
+            continue
+
+        logs.append({
+            "timestamp": log_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "level": level,
+            "message": msg,
+        })
+        count += 1
+        current_time_ms += 60 * 1000
+
+    return {
+        "topic_id": topic_id,
+        "start_time": start_time,
+        "end_time": end_time,
+        "query": query,
+        "limit": limit,
+        "total": len(logs),
+        "logs": logs,
+        "took_ms": 50,
+        "message": f"成功查询 {len(logs)} 条日志",
+        "source": "mock",
+    }
+
+
 @mcp.tool()
 @log_tool_call
 def search_log(
@@ -354,115 +480,26 @@ def search_log(
 ) -> Dict[str, Any]:
     """基于提供的查询参数搜索日志。
 
+    支持真实腾讯云 CLS API（需配置环境变量 TENCENTCLOUD_SECRET_ID/KEY），
+    未配置时使用模拟数据。
+
     Args:
         topic_id: 主题ID（必填）
-            示例: "topic-001"
-        
-        start_time: 开始时间戳，单位为毫秒（必填，int类型）
-            重要: 必须传递整数类型的毫秒时间戳
-            获取方式: 
-            1. 使用 get_current_timestamp() 工具获取当前时间戳
-            2. 计算历史时间: current_timestamp - (分钟数 * 60 * 1000)
-            示例: 
-            - 当前时间: 1708012345000
-            - 15分钟前: 1708012345000 - (15 * 60 * 1000) = 1708011445000
-            - 1小时前: 1708012345000 - (60 * 60 * 1000) = 1708008745000
-        
-        end_time: 结束时间戳，单位为毫秒（必填，int类型）
-            重要: 必须传递整数类型的毫秒时间戳
-            通常使用 get_current_timestamp() 工具获取当前时间作为结束时间
-            示例: 1708012345000
-        
-        query: 查询语句（可选，CLS 查询语法）
-            示例: "level:ERROR" 或 "message:异常"
-        
-        limit: 返回结果数量限制（默认100，可选）
+        start_time: 开始时间戳（毫秒，int类型）
+        end_time: 结束时间戳（毫秒，int类型）
+        query: 查询语句（可选）
+        limit: 返回结果数量限制（默认100）
 
     Returns:
         Dict: 搜索结果
-            - topic_id: 主题ID
-            - start_time: 开始时间戳
-            - end_time: 结束时间戳
-            - query: 查询语句
-            - limit: 结果限制
-            - total: 实际返回的日志条数
-            - logs: 日志列表，每条日志包含:
-                * timestamp: 日志时间（格式: YYYY-MM-DD HH:MM:SS）
-                * level: 日志级别
-                * message: 日志内容
-            - took_ms: 查询耗时（毫秒）
-            - message: 查询状态消息
-    
-    使用示例:
-        # 步骤1: 获取当前时间戳
-        current_ts = get_current_timestamp()  # 返回: 1708012345000
-        
-        # 步骤2: 计算开始时间（15分钟前）
-        start_ts = current_ts - (15 * 60 * 1000)  # 1708011445000
-        
-        # 步骤3: 搜索日志
-        search_log(
-            topic_id="topic-001",
-            start_time=start_ts,     # int类型: 1708011445000
-            end_time=current_ts,     # int类型: 1708012345000
-            limit=100
-        )
     """
-    # 根据 topic_id 返回不同的结果
-    if topic_id == "topic-001":
-        # topic-001: 应用日志，动态生成 INFO 日志
-        logs = []
-        current_time_ms = start_time
-        count = 0
+    # 先尝试真实 API
+    real_result = _call_real_cls_api(topic_id, start_time, end_time, query, limit)
+    if real_result:
+        return real_result
 
-        # 计算最大可生成的日志条数（基于时间范围）
-        max_logs_by_time = int((end_time - start_time) / (60 * 1000)) + 1
-
-        # 实际生成的日志数量取 limit 和时间范围内最大日志数的较小值
-        actual_limit = min(limit, max_logs_by_time)
-
-        while current_time_ms <= end_time and count < actual_limit:
-            # 将毫秒时间戳转换为可读格式
-            log_time = datetime.fromtimestamp(current_time_ms / 1000)
-            time_str = log_time.strftime("%Y-%m-%d %H:%M:%S")
-
-            log_entry = {
-                "timestamp": time_str,
-                "level": "INFO",
-                "message": "正在同步元数据……"
-            }
-
-            logs.append(log_entry)
-            count += 1
-
-            # 下一条日志时间增加1分钟（60秒 * 1000毫秒）
-            current_time_ms += 60 * 1000
-
-        return {
-            "topic_id": topic_id,
-            "start_time": start_time,
-            "end_time": end_time,
-            "query": query,
-            "limit": limit,
-            "total": len(logs),
-            "logs": logs,
-            "took_ms": 50,
-            "message": f"成功查询 {len(logs)} 条应用日志"
-        }
-    else:
-        # 其他 topic_id: 返回错误，表示 topic 不存在
-        return {
-            "topic_id": topic_id,
-            "start_time": start_time,
-            "end_time": end_time,
-            "query": query,
-            "limit": limit,
-            "total": 0,
-            "logs": [],
-            "took_ms": 0,
-            "error": f"主题不存在: {topic_id}",
-            "message": f"错误: 未找到主题 {topic_id}，请检查 topic_id 是否正确"
-        }
+    # 降级到 mock
+    return _generate_mock_logs(topic_id, start_time, end_time, query, limit)
 
 
 

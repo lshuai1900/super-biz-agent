@@ -49,9 +49,36 @@ class Settings(BaseSettings):
     mcp_monitor_transport: str = "streamable-http"
     mcp_monitor_url: str = "http://localhost:8004/mcp"
 
+    # PostgreSQL 配置
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/super_biz_agent"
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "super_biz_agent"
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+
+    # RAG 增强配置
+    rag_chunk_size: int = 1600
+    rag_chunk_overlap: int = 100
+    rag_candidate_top_k: int = 20
+    rag_final_top_k: int = 3
+    rag_min_similarity_score: float = 0.0
+    rag_max_l2_distance: float = 2.0
+    rag_enable_rerank: bool = False
+    rag_rerank_model: str = ""
+
+    # Ragas 评估
+    ragas_enable: bool = False
+
     # Prometheus
     prometheus_base_url: str = "http://127.0.0.1:9090"
     prometheus_request_timeout: float = 10.0
+
+    # 腾讯云 CLS
+    tencentcloud_secret_id: str = ""
+    tencentcloud_secret_key: str = ""
+    tencentcloud_region: str = "ap-beijing"
+    tencentcloud_topic_id: str = ""
 
     @property
     def mcp_servers(self) -> Dict[str, Dict[str, Any]]:

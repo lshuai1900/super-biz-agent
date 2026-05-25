@@ -30,6 +30,13 @@ dependencies = [
     "langchain-mcp-adapters>=0.2.1",
     "fastmcp>=2.14.0",
     "langchain-qwq>=0.3.4",
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.28.0",
+    "greenlet>=3.0.0",
+    "tiktoken>=0.5.0",
+    "ragas>=0.1.0",
+    "datasets>=2.14.0",
+    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]

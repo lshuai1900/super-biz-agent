@@ -57,6 +57,23 @@ services:
     depends_on:
       - "etcd"
       - "minio"
+  postgres:
+    container_name: super-biz-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: super_biz_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # 这是新增的 Attu 服务哦！
   attu:
     container_name: milvus-attu

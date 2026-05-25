@@ -3,12 +3,14 @@
 基于 LangGraph 官方教程实现
 """
 
-from typing import AsyncGenerator, Dict, Any
+import asyncio
+from typing import AsyncGenerator, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 
 from app.agent.aiops import PlanExecuteState, planner, executor, replanner
+from app.services.memory_service import memory_service
 
 
 # 节点名称常量
@@ -30,36 +32,25 @@ class AIOpsService:
         """构建 Plan-Execute-Replan 工作流"""
         logger.info("构建工作流图...")
 
-        # 创建状态图
         workflow = StateGraph(PlanExecuteState)
 
-        # 添加节点
-        workflow.add_node(NODE_PLANNER, planner)      # 制定计划
-        workflow.add_node(NODE_EXECUTOR, executor)  # 执行步骤
-        workflow.add_node(NODE_REPLANNER, replanner)  # 重新规划
+        workflow.add_node(NODE_PLANNER, planner)
+        workflow.add_node(NODE_EXECUTOR, executor)
+        workflow.add_node(NODE_REPLANNER, replanner)
 
-        # 设置入口点
         workflow.set_entry_point(NODE_PLANNER)
 
-        # 定义边
-        workflow.add_edge(NODE_PLANNER, NODE_EXECUTOR)     # planner -> executor
-        workflow.add_edge(NODE_EXECUTOR, NODE_REPLANNER)   # executor -> replanner
+        workflow.add_edge(NODE_PLANNER, NODE_EXECUTOR)
+        workflow.add_edge(NODE_EXECUTOR, NODE_REPLANNER)
 
-        # replanner 的条件边
         def should_continue(state: PlanExecuteState) -> str:
-            """判断是否继续执行"""
-            # 如果已经生成了最终响应，结束
             if state.get("response"):
                 logger.info("已生成最终响应，结束流程")
                 return END
-
-            # 如果还有计划步骤，继续执行
             plan = state.get("plan", [])
             if plan:
                 logger.info(f"继续执行，剩余 {len(plan)} 个步骤")
                 return NODE_EXECUTOR
-
-            # 计划为空但没有响应，返回 replanner 生成响应
             logger.info("计划执行完毕，生成最终响应")
             return END
 
@@ -68,13 +59,11 @@ class AIOpsService:
             should_continue,
             {
                 NODE_EXECUTOR: NODE_EXECUTOR,
-                END: END
+                END: END,
             }
         )
 
-        # 编译工作流
         compiled_graph = workflow.compile(checkpointer=self.checkpointer)
-
         logger.info("工作流图构建完成")
         return compiled_graph
 
@@ -84,19 +73,14 @@ class AIOpsService:
         session_id: str = "default"
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        执行 Plan-Execute-Replan 流程
-
-        Args:
-            user_input: 用户的任务描述
-            session_id: 会话ID
+        执行 Plan-Execute-Replan 流程（流式）
 
         Yields:
-            Dict[str, Any]: 流式事件
+            Dict[str, Any]: tool_call_start, tool_call_result, plan, step_complete, report, complete, error
         """
         logger.info(f"[会话 {session_id}] 开始执行任务: {user_input}")
 
         try:
-            # 初始化状态
             initial_state: PlanExecuteState = {
                 "input": user_input,
                 "plan": [],
@@ -104,41 +88,37 @@ class AIOpsService:
                 "response": ""
             }
 
-            # 流式执行工作流
             config_dict = {
                 "configurable": {
                     "thread_id": session_id
                 }
             }
 
+            # 心跳任务
+            async def heartbeat():
+                while True:
+                    await asyncio.sleep(15)
+                    yield {"type": "heartbeat", "message": "keep-alive"}
+
             async for event in self.graph.astream(
                 input=initial_state,
                 config=config_dict,
                 stream_mode="updates"
             ):
-                # 解析事件
                 for node_name, node_output in event.items():
-                    logger.info(f"节点 '{node_name}' 输出事件")
-
-                    # 根据节点类型生成不同的事件
                     if node_name == NODE_PLANNER:
                         yield self._format_planner_event(node_output)
-
                     elif node_name == NODE_EXECUTOR:
                         yield self._format_executor_event(node_output)
-
                     elif node_name == NODE_REPLANNER:
                         yield self._format_replanner_event(node_output)
 
             # 获取最终状态
             final_state = self.graph.get_state(config_dict)
             final_response = ""
-
-            # 安全地获取响应（处理 values 可能为 None 的情况）
             if final_state and final_state.values:
                 final_response = final_state.values.get("response", "")
 
-            # 发送完成事件
             yield {
                 "type": "complete",
                 "stage": "complete",
@@ -161,15 +141,11 @@ class AIOpsService:
         session_id: str = "default"
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        AIOps 诊断接口（兼容旧接口）
-
-        Args:
-            session_id: 会话ID
+        AIOps 诊断接口（流式）
 
         Yields:
-            Dict[str, Any]: 诊断过程的流式事件
+            Dict: 诊断过程的流式事件（兼容旧接口 + 新事件类型）
         """
-        # 使用固定的 AIOps 任务描述
         from textwrap import dedent
         aiops_task = dedent("""诊断当前系统是否存在告警，如果存在告警请详细分析告警原因并生成诊断报告，诊断报告输出格式要求：
                 ```
@@ -182,145 +158,123 @@ class AIOpsService:
                 | 告警名称 | 级别 | 目标服务 | 首次触发时间 | 最新触发时间 | 状态 |
                 |---------|------|----------|-------------|-------------|------|
                 | [告警1名称] | [级别] | [服务名] | [时间] | [时间] | 活跃 |
-                | [告警2名称] | [级别] | [服务名] | [时间] | [时间] | 活跃 |
 
                 ---
 
-                ## 🔍 告警根因分析1 - [告警名称]
+                ## 🔍 告警根因分析
 
                 ### 告警详情
-                - **告警级别**: [级别]
-                - **受影响服务**: [服务名]
-                - **持续时间**: [X分钟]
-
                 ### 症状描述
-                [根据监控指标描述症状]
-
                 ### 日志证据
-                [引用查询到的关键日志]
-
                 ### 根因结论
-                [基于证据得出的根本原因]
 
                 ---
 
-                ## 🛠️ 处理方案执行1 - [告警名称]
+                ## 🛠️ 处理方案
 
                 ### 已执行的排查步骤
-                1. [步骤1]
-                2. [步骤2]
-
                 ### 处理建议
-                [给出具体的处理建议]
-
-                ### 预期效果
-                [说明预期的效果]
-
-                ---
-
-                ## 🔍 告警根因分析2 - [告警名称]
-                [如果有第2个告警，重复上述格式]
 
                 ---
 
                 ## 📊 结论
 
                 ### 整体评估
-                [总结所有告警的整体情况]
-
                 ### 关键发现
-                - [发现1]
-                - [发现2]
-
                 ### 后续建议
-                1. [建议1]
-                2. [建议2]
-
                 ### 风险评估
-                [评估当前风险等级和影响范围]
                 ```
 
                 **重要提醒**：
                 - 最终输出必须是纯 Markdown 文本，不要包含 JSON 结构
                 - 所有内容必须基于工具查询的真实数据，严禁编造
-                - 如果某个步骤失败，在结论中如实说明，不要跳过""")
+                """)
+
+        # 写入用户消息
+        await memory_service.add_user_message(session_id, aiops_task)
 
         async for event in self.execute(aiops_task, session_id):
-            # 转换事件格式以兼容旧的 API
-            if event.get("type") == "complete":
-                # 将 response 包装为 diagnosis 格式
+            ev_type = event.get("type")
+
+            # 转换事件格式
+            if ev_type == "complete":
+                response = event.get("response", "")
+                await memory_service.add_assistant_message(session_id, response)
+                await memory_service.check_and_summarize(session_id)
+
                 yield {
                     "type": "complete",
                     "stage": "diagnosis_complete",
                     "message": "诊断流程完成",
                     "diagnosis": {
                         "status": "completed",
-                        "report": event.get("response", "")
+                        "report": response
                     }
                 }
-            else:
+            elif ev_type in ("plan", "step_complete", "report", "status", "error", "heartbeat"):
+                yield event
+            elif ev_type == "tool_call":
+                # 透传工具调用事件
                 yield event
 
-    def _format_planner_event(self, state: Dict | None) -> Dict:
+    def _format_planner_event(self, state: Optional[Dict]) -> Dict:
         """格式化 Planner 节点事件"""
         if not state:
-            return {
-                "type": "status",
-                "stage": "planner",
-                "message": "规划节点执行中"
-            }
+            return {"type": "status", "stage": "planner", "message": "规划节点执行中"}
 
         plan = state.get("plan", [])
-
         return {
             "type": "plan",
             "stage": "plan_created",
             "message": f"执行计划已制定，共 {len(plan)} 个步骤",
-            "plan": plan
+            "plan": plan,
+            "tool_calls_planned": len(plan),
         }
 
-    def _format_executor_event(self, state: Dict | None) -> Dict:
+    def _format_executor_event(self, state: Optional[Dict]) -> Dict:
         """格式化 Executor 节点事件"""
         if not state:
-            return {
-                "type": "status",
-                "stage": "executor",
-                "message": "执行节点运行中"
-            }
+            return {"type": "status", "stage": "executor", "message": "执行节点运行中"}
 
         plan = state.get("plan", [])
         past_steps = state.get("past_steps", [])
 
         if past_steps:
-            last_step, _ = past_steps[-1]
-            return {
+            last_step, last_result = past_steps[-1]
+            total = len(past_steps) + len(plan)
+
+            # 检测工具调用信息
+            event = {
                 "type": "step_complete",
                 "stage": "step_executed",
-                "message": f"步骤执行完成 ({len(past_steps)}/{len(past_steps) + len(plan)})",
+                "message": f"步骤执行完成 ({len(past_steps)}/{total})",
                 "current_step": last_step,
-                "remaining_steps": len(plan)
-            }
-        else:
-            return {
-                "type": "status",
-                "stage": "executor",
-                "message": "开始执行步骤"
+                "result_preview": last_result[:200] if last_result else "",
+                "remaining_steps": len(plan),
+                "tool_calls": self._extract_tool_calls(last_result),
             }
 
-    def _format_replanner_event(self, state: Dict | None) -> Dict:
+            # 发送工具调用事件
+            tool_calls = self._extract_tool_calls(last_step)
+            if tool_calls:
+                event["tool_call_start"] = {
+                    "tool": tool_calls[0],
+                    "input": last_step,
+                }
+
+            return event
+        else:
+            return {"type": "status", "stage": "executor", "message": "开始执行步骤"}
+
+    def _format_replanner_event(self, state: Optional[Dict]) -> Dict:
         """格式化 Replanner 节点事件"""
         if not state:
-            return {
-                "type": "status",
-                "stage": "replanner",
-                "message": "评估节点运行中"
-            }
+            return {"type": "status", "stage": "replanner", "message": "评估节点运行中"}
 
         response = state.get("response", "")
         plan = state.get("plan", [])
 
         if response:
-            # 已生成最终响应
             return {
                 "type": "report",
                 "stage": "final_report",
@@ -328,13 +282,28 @@ class AIOpsService:
                 "report": response
             }
         else:
-            # 重新规划
             return {
                 "type": "status",
                 "stage": "replanner",
                 "message": f"评估完成，{'继续执行剩余步骤' if plan else '准备生成最终响应'}",
-                "remaining_steps": len(plan)
+                "remaining_steps": len(plan),
+                "should_replan": bool(plan),
             }
+
+    def _extract_tool_calls(self, text: str) -> list:
+        """从文本中提取工具调用信息"""
+        import re
+        patterns = [
+            r'使用\s*([\w_]+)\s*工具',
+            r'调用\s*([\w_]+)',
+            r'([\w_]+)\s*查询',
+            r'通过\s*([\w_]+)\s*获取',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return [match.group(1)]
+        return []
 
 
 # 全局单例
